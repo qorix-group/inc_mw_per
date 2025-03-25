@@ -9,7 +9,7 @@
 //!
 //! SPDX-License-Identifier: Apache-2.0
 //!
-//! # Key-Value-Storage API and Implementation
+//! # Key-Value-Store API and Implementation
 //!
 //! ## Introduction
 //!
@@ -18,7 +18,7 @@
 //! [Adler32](https://crates.io/crates/adler32) crate. No other direct dependencies are used
 //! besides the Rust `std` library.
 //!
-//! The key-value-storage is opened or initialized with [`Kvs::open`] and automatically flushed on
+//! The key-value-store is opened or initialized with [`Kvs::open`] and automatically flushed on
 //! exit by default. This can be controlled by [`Kvs::flush_on_exit`]. It is possible to manually
 //! flush the KVS by calling [`Kvs::flush`].
 //!
@@ -41,7 +41,7 @@
 //! `Vec<JsonValue>`, `HashMap<String, JsonValue` or `JsonValue`. Also `let value: f64 =
 //! kvs.get_value()` can be used.
 //!
-//! If a `key` isn't available in the KVS a lookup into the defaults storage will be performed and
+//! If a `key` isn't available in the KVS a lookup into the defaults store will be performed and
 //! if the `value` is found the default will be returned. The default value isn't stored when
 //! [`Kvs::flush`] is called unless it's explicitly written with [`Kvs::set_value`]. So when
 //! defaults change always the latest values will be returned. If that is an unwanted behaviour
@@ -98,7 +98,7 @@
 //! ## Feature Coverage
 //!
 //! Feature and requirement definition:
-//!   * [Features/Persistency/Key-Value-Storage](https://github.com/eclipse-score/score/blob/ulhu_persistency_kvs/docs/features/persistency/key-value-storage/index.rst#specification)
+//!   * [Features/Persistency/Key-Value-Store](https://github.com/eclipse-score/score/blob/ulhu_persistency_kvs/docs/features/persistency/key-value-storage/index.rst#specification)
 //!   * [Requirements/Stakeholder](https://github.com/eclipse-score/score/blob/ulhu_persistency_kvs/docs/requirements/stakeholder/index.rst)
 //!
 //! Supported features and requirements:
@@ -147,7 +147,7 @@ use std::path::Path;
 use std::string::FromUtf8Error;
 use std::sync::{
     atomic::{self, AtomicBool},
-    Mutex, MutexGuard, PoisonError,
+    Arc, Mutex, MutexGuard, PoisonError,
 };
 use tinyjson::{JsonGenerateError, JsonGenerator, JsonParseError, JsonValue, UnexpectedValue};
 
@@ -222,9 +222,22 @@ pub enum ErrorCode {
     MutexLockFailed,
 }
 
-/// Key-value-storage data
-pub struct Kvs {
-    /// Storage data
+/// Key-value-store value
+#[derive(Clone)]
+pub struct KvsValue<T> {
+    /// Key-value-store instance
+    kvs: Kvs,
+
+    /// Key name
+    key: String,
+
+    /// Data type
+    data_type: std::marker::PhantomData<T>,
+}
+
+/// Key-value-store instance data
+struct KvsData {
+    /// Store data
     ///
     /// Feature: `FEAT_REQ__KVS__thread_safety` (Mutex)
     kvs: Mutex<HashMap<String, JsonValue>>,
@@ -242,6 +255,13 @@ pub struct Kvs {
 
     /// Flush on exit flag
     flush_on_exit: AtomicBool,
+}
+
+/// Key-value-store instance
+#[derive(Clone)]
+pub struct Kvs {
+    /// Key-value-store data
+    pub(crate) data: Arc<KvsData>,
 }
 
 impl From<std::io::Error> for ErrorCode {
@@ -330,9 +350,9 @@ impl SnapshotId {
 }
 
 impl Kvs {
-    /// Open the key-value-storage
+    /// Open the key-value-store
     ///
-    /// Checks and opens a key-value-storage. Flush on exit is enabled by default and can be
+    /// Checks and opens a key-value-store. Flush on exit is enabled by default and can be
     /// controlled with [`flush_on_exit`](Self::flush_on_exit).
     ///
     /// Parameter:
@@ -360,17 +380,20 @@ impl Kvs {
         println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
 
         Ok(Self {
-            kvs: Mutex::new(kvs),
-            default,
-            fn_pre,
-            inst_id,
-            flush_on_exit: AtomicBool::new(true),
+            data: Arc::new(KvsData {
+                kvs: Mutex::new(kvs),
+                default,
+                fn_pre,
+                inst_id,
+                flush_on_exit: AtomicBool::new(true),
+            }),
         })
     }
 
     /// Control the flush on exit behaviour
     pub fn flush_on_exit(self, flush_on_exit: bool) {
-        self.flush_on_exit
+        self.data
+            .flush_on_exit
             .store(flush_on_exit, atomic::Ordering::Relaxed);
     }
 
@@ -436,20 +459,26 @@ impl Kvs {
         }
     }
 
-    /// Resets a key-value-storage to its initial state
+    /// Resets a key-value-store to its initial state
     pub fn reset(&self) -> Result<(), ErrorCode> {
-        *self.kvs.lock()? = HashMap::new();
+        *self.data.kvs.lock()? = HashMap::new();
         Ok(())
     }
 
     /// Get list of all keys
     pub fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> {
-        Ok(self.kvs.lock()?.keys().map(|x| x.to_string()).collect())
+        Ok(self
+            .data
+            .kvs
+            .lock()?
+            .keys()
+            .map(|x| x.to_string())
+            .collect())
     }
 
     /// Check if a key exists
     pub fn key_exists(&self, key: &str) -> Result<bool, ErrorCode> {
-        Ok(self.kvs.lock()?.contains_key(key))
+        Ok(self.data.kvs.lock()?.contains_key(key))
     }
 
     /// Get the assigned value for a given key
@@ -463,7 +492,7 @@ impl Kvs {
     where
         <T as TryFrom<JsonValue>>::Error: std::fmt::Debug,
     {
-        if let Some(value) = self.kvs.lock()?.get(key) {
+        if let Some(value) = self.data.kvs.lock()?.get(key) {
             match T::try_from(value.clone()) {
                 Ok(value) => Ok(value),
                 Err(err) => {
@@ -473,7 +502,7 @@ impl Kvs {
                     Err(ErrorCode::ConversionFailed)
                 }
             }
-        } else if let Some(value) = self.default.get(key) {
+        } else if let Some(value) = self.data.default.get(key) {
             // check if key has a default value
             match T::try_from(value.clone()) {
                 Ok(value) => Ok(value),
@@ -497,7 +526,7 @@ impl Kvs {
     ///   * `FEAT_REQ__KVS__default_values`
     ///   * `FEAT_REQ__KVS__default_value_retrieval`
     pub fn get_default_value(&self, key: &str) -> Result<JsonValue, ErrorCode> {
-        if let Some(value) = self.default.get(key) {
+        if let Some(value) = self.data.default.get(key) {
             Ok(value.clone())
         } else {
             Err(ErrorCode::KeyNotFound)
@@ -509,9 +538,9 @@ impl Kvs {
     /// Features:
     ///   * `FEAT_REQ__KVS__default_values`
     pub fn is_value_default(&self, key: &str) -> Result<bool, ErrorCode> {
-        if self.kvs.lock()?.contains_key(key) {
+        if self.data.kvs.lock()?.contains_key(key) {
             Ok(false)
-        } else if self.default.contains_key(key) {
+        } else if self.data.default.contains_key(key) {
             Ok(true)
         } else {
             Err(ErrorCode::KeyNotFound)
@@ -524,27 +553,27 @@ impl Kvs {
         key: S,
         value: J,
     ) -> Result<(), ErrorCode> {
-        self.kvs.lock()?.insert(key.into(), value.into());
+        self.data.kvs.lock()?.insert(key.into(), value.into());
         Ok(())
     }
 
     /// Remove a key
     pub fn remove_key(&self, key: &str) -> Result<(), ErrorCode> {
-        if self.kvs.lock()?.remove(key).is_some() {
+        if self.data.kvs.lock()?.remove(key).is_some() {
             Ok(())
         } else {
             Err(ErrorCode::KeyNotFound)
         }
     }
 
-    /// Flush the in-memory key-value-storage to the persistent storage
+    /// Flush the in-memory key-value-store to the persistent store
     ///
     /// Features:
     ///   * `FEAT_REQ__KVS__snapshots`
     ///   * `FEAT_REQ__KVS__persistency`
     ///   * `FEAT_REQ__KVS__integrity_check`
     pub fn flush(&self) -> Result<(), ErrorCode> {
-        let json = JsonValue::from(self.kvs.lock()?.clone());
+        let json = JsonValue::from(self.data.kvs.lock()?.clone());
         let mut buf = Vec::new();
         let mut gen = JsonGenerator::new(&mut buf).indent("  ");
         gen.generate(&json)?;
@@ -553,11 +582,11 @@ impl Kvs {
 
         let hash = RollingAdler32::from_buffer(&buf).hash();
 
-        let fn_json = format!("{}_0.json", self.fn_pre);
+        let fn_json = format!("{}_0.json", self.data.fn_pre);
         let data = String::from_utf8(buf)?;
         fs::write(fn_json, &data)?;
 
-        let fn_hash = format!("{}_0.hash", self.fn_pre);
+        let fn_hash = format!("{}_0.hash", self.data.fn_pre);
         fs::write(fn_hash, hash.to_be_bytes());
 
         Ok(())
@@ -568,7 +597,7 @@ impl Kvs {
         let mut count = 0;
 
         for idx in 0..=KVS_MAX_SNAPSHOTS {
-            if !Path::new(&format!("{}_{}.json", self.fn_pre, idx)).exists() {
+            if !Path::new(&format!("{}_{}.json", self.data.fn_pre, idx)).exists() {
                 break;
             }
 
@@ -588,7 +617,7 @@ impl Kvs {
         Ok(KVS_MAX_SNAPSHOTS)
     }
 
-    /// Recover key-value-storage from snapshot
+    /// Recover key-value-store from snapshot
     ///
     /// Restore a previously created KVS snapshot.
     ///
@@ -609,8 +638,8 @@ impl Kvs {
             return Err(ErrorCode::InvalidSnapshotId);
         }
 
-        let kvs = Self::open_json(&format!("{}_{}", self.fn_pre, id.0), true, true)?;
-        *self.kvs.lock()? = kvs;
+        let kvs = Self::open_json(&format!("{}_{}", self.data.fn_pre, id.0), true, true)?;
+        *self.data.kvs.lock()? = kvs;
 
         Ok(())
     }
@@ -621,10 +650,10 @@ impl Kvs {
     ///   * `FEAT_REQ__KVS__snapshots`
     fn snapshot_rotate(&self) -> Result<(), ErrorCode> {
         for idx in (1..=KVS_MAX_SNAPSHOTS).rev() {
-            let hash_old = format!("{}_{}.hash", self.fn_pre, idx - 1);
-            let hash_new = format!("{}_{}.hash", self.fn_pre, idx);
-            let snap_old = format!("{}_{}.json", self.fn_pre, idx - 1);
-            let snap_new = format!("{}_{}.json", self.fn_pre, idx);
+            let hash_old = format!("{}_{}.hash", self.data.fn_pre, idx - 1);
+            let hash_new = format!("{}_{}.hash", self.data.fn_pre, idx);
+            let snap_old = format!("{}_{}.json", self.data.fn_pre, idx - 1);
+            let snap_new = format!("{}_{}.json", self.data.fn_pre, idx);
 
             println!("rotating: {snap_old} -> {snap_new}");
 
@@ -648,19 +677,80 @@ impl Kvs {
 
     /// Return the KVS-filename for a given snapshot ID
     pub fn get_kvs_filename(&self, id: SnapshotId) -> String {
-        format!("{}_{}.json", self.fn_pre, id)
+        format!("{}_{}.json", self.data.fn_pre, id)
     }
 
     /// Return the hash-filename for a given snapshot ID
     pub fn get_hash_filename(&self, id: SnapshotId) -> String {
-        format!("{}_{}.hash", self.fn_pre, id)
+        format!("{}_{}.hash", self.data.fn_pre, id)
+    }
+
+    /// Get a value object
+    pub fn get_value_object<T>(&self, key: &str) -> Result<KvsValue<T>, ErrorCode> {
+        Ok(KvsValue {
+            kvs: self.clone(),
+            key: key.to_string(),
+            data_type: std::marker::PhantomData::<T>,
+        })
     }
 }
 
 impl Drop for Kvs {
     fn drop(&mut self) {
-        if self.flush_on_exit.load(atomic::Ordering::Relaxed) {
+        if self.data.flush_on_exit.load(atomic::Ordering::Relaxed) {
             let _ = self.flush();
         }
+    }
+}
+
+impl<T: TryFrom<JsonValue>> KvsValue<T> {
+    /// Get the name of the values key
+    pub fn get_key_name(&self) -> String {
+        self.key.clone()
+    }
+
+    /// Get the value
+    ///
+    /// See [Kvs::get_value] for details.
+    pub fn get(&self) -> Result<T, ErrorCode>
+    where
+        <T as TryFrom<JsonValue>>::Error: std::fmt::Debug,
+    {
+        self.kvs.get_value(&self.key)
+    }
+
+    /// Set a value
+    ///
+    /// See [Kvs::set_value] for details.
+    pub fn set<J: Into<JsonValue>>(&self, value: J) -> Result<(), ErrorCode> {
+        self.kvs.set_value(&self.key, value)
+    }
+
+    /// Get default value
+    ///
+    /// See [Kvs::get_default_value] for details.
+    pub fn get_default(&self) -> Result<JsonValue, ErrorCode> {
+        self.kvs.get_default_value(&self.key)
+    }
+
+    /// Return if the value wasn't set yet and uses its default value
+    ///
+    /// See [Kvs::is_value_default] for details.
+    pub fn is_default(&self) -> Result<bool, ErrorCode> {
+        self.kvs.is_value_default(&self.key)
+    }
+
+    /// Check if this value key exists
+    ///
+    /// See [Kvs::key_exists] for details.
+    pub fn exists(&self) -> Result<bool, ErrorCode> {
+        self.kvs.key_exists(&self.key)
+    }
+
+    /// Remove value key from key-value-store
+    ///
+    /// See [Kvs::remove_key] for details.
+    pub fn remove(&self) -> Result<(), ErrorCode> {
+        self.kvs.remove_key(&self.key)
     }
 }
