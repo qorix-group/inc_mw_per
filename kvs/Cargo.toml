@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 adler32 = "1.2.0"
+rust_kvs_derive = { version = "0.1.0", path = "../kvs_derive" }
 tinyjson = "2.5.1"
