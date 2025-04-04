@@ -54,14 +54,15 @@
 //! ## Example Usage
 //!
 //! ```
-//! use rust_kvs::{ErrorCode, InstanceId, Kvs, OpenNeedDefaults, OpenNeedKvs, KvsValue};
+//! use rust_kvs::{ErrorCode, InstanceId, KvsBuilder, KvsValue};
 //! use std::collections::HashMap;
 //!
 //! fn main() -> Result<(), ErrorCode> {
-//!     let kvs = Kvs::open(
-//!         InstanceId::new(0),
-//!         OpenNeedDefaults::Optional,
-//!         OpenNeedKvs::Optional)?;
+//!
+//!     let kvs = KvsBuilder::create(InstanceId::new(0))?
+//!         .need_defaults(false)
+//!         .need_kvs(false)
+//!         .build()?;
 //!
 //!     kvs.set_value("number", 123.0)?;
 //!     kvs.set_value("bool", true)?;
@@ -145,7 +146,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::ops::Index;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::string::FromUtf8Error;
 use std::sync::{
     atomic::{self, AtomicBool},
@@ -225,6 +226,15 @@ pub enum ErrorCode {
     MutexLockFailed,
 }
 
+/// KVS defaults selector
+enum KvsDefaults {
+    /// Read defaults from file
+    File(String),
+
+    /// Read defaults from JSON string
+    String(String),
+}
+
 /// Key-value-storage builder
 pub struct KvsBuilder {
     /// Instance ID
@@ -235,6 +245,15 @@ pub struct KvsBuilder {
 
     /// Need-KVS flag
     need_kvs: bool,
+
+    /// Filename prefix
+    filename_prefix: String,
+
+    /// Defaults filename or JSON string
+    defaults: KvsDefaults,
+
+    /// Working directory
+    working_dir: PathBuf,
 }
 
 /// Key-value-storage data
@@ -251,6 +270,9 @@ pub struct Kvs {
 
     /// Filename prefix
     filename_prefix: String,
+
+    /// Working directory
+    working_dir: PathBuf,
 
     /// Flush on exit flag
     flush_on_exit: AtomicBool,
@@ -278,24 +300,6 @@ pub enum KvsValue {
     Object(HashMap<String, KvsValue>),
 }
 
-/// Need-Defaults flag
-pub enum OpenNeedDefaults {
-    /// Optional: Open defaults only if available
-    Optional,
-
-    /// Required: Defaults must be available
-    Required,
-}
-
-/// Need-KVS flag
-pub enum OpenNeedKvs {
-    /// Optional: Use an empty KVS if no KVS is available
-    Optional,
-
-    /// Required: KVS must be already exist
-    Required,
-}
-
 /// Need-File flag
 #[derive(PartialEq)]
 enum OpenJsonNeedFile {
@@ -306,40 +310,12 @@ enum OpenJsonNeedFile {
     Required,
 }
 
-impl From<bool> for OpenNeedDefaults {
-    fn from(flag: bool) -> OpenNeedDefaults {
+impl From<bool> for OpenJsonNeedFile {
+    fn from(flag: bool) -> OpenJsonNeedFile {
         if flag {
-            OpenNeedDefaults::Required
+            OpenJsonNeedFile::Required
         } else {
-            OpenNeedDefaults::Optional
-        }
-    }
-}
-
-impl From<bool> for OpenNeedKvs {
-    fn from(flag: bool) -> OpenNeedKvs {
-        if flag {
-            OpenNeedKvs::Required
-        } else {
-            OpenNeedKvs::Optional
-        }
-    }
-}
-
-impl From<OpenNeedDefaults> for OpenJsonNeedFile {
-    fn from(val: OpenNeedDefaults) -> OpenJsonNeedFile {
-        match val {
-            OpenNeedDefaults::Optional => OpenJsonNeedFile::Optional,
-            OpenNeedDefaults::Required => OpenJsonNeedFile::Required,
-        }
-    }
-}
-
-impl From<OpenNeedKvs> for OpenJsonNeedFile {
-    fn from(val: OpenNeedKvs) -> OpenJsonNeedFile {
-        match val {
-            OpenNeedKvs::Optional => OpenJsonNeedFile::Optional,
-            OpenNeedKvs::Required => OpenJsonNeedFile::Required,
+            OpenJsonNeedFile::Optional
         }
     }
 }
@@ -450,12 +426,18 @@ impl KvsBuilder {
     ///
     /// # Return Values
     ///   * KvsBuilder instance
-    pub fn new(instance_id: InstanceId) -> Self {
-        Self {
+    pub fn create(instance_id: InstanceId) -> Result<Self, ErrorCode> {
+        let filename_prefix = format!("kvs_{instance_id}");
+        let filename_defaults = format!("kvs_{instance_id}_default");
+
+        Ok(Self {
             instance_id,
             need_defaults: false,
             need_kvs: false,
-        }
+            filename_prefix,
+            defaults: KvsDefaults::File(filename_defaults),
+            working_dir: std::env::current_dir()?,
+        })
     }
 
     /// Configure if defaults must exist when opening the KVS
@@ -482,14 +464,69 @@ impl KvsBuilder {
         self
     }
 
+    /// Override the generated filename prefix
+    ///
+    /// # Parameters
+    ///   * `filename_prefix`: filename prefix
+    ///
+    /// # Return Values
+    ///   * KvsBuilder instance
+    pub fn filename_prefix<S>(mut self, filename_prefix: S) -> KvsBuilder
+    where
+        S: Into<String>,
+    {
+        self.filename_prefix = filename_prefix.into();
+        self
+    }
+
+    /// Override the generated defaults filename
+    ///
+    /// # Parameters
+    ///   * `filename_defaults`: defaults filename
+    ///
+    /// # Return Values
+    ///   * KvsBuilder instance
+    pub fn filename_defaults<S>(mut self, filename_defaults: S) -> KvsBuilder
+    where
+        S: Into<String>,
+    {
+        self.defaults = KvsDefaults::File(filename_defaults.into());
+        self
+    }
+
+    /// Provide KVS defaults as JSON string
+    ///
+    /// # Parameters
+    ///   * `defaults`: Defaults as JSON string
+    ///
+    /// # Return Values
+    ///   * KvsBuilder instance
+    pub fn defaults<S>(mut self, defaults: S) -> KvsBuilder
+    where
+        S: Into<String>,
+    {
+        self.defaults = KvsDefaults::String(defaults.into());
+        self
+    }
+
+    /// Override the working directory
+    ///
+    /// # Parameters
+    ///   * `working_dir`: Working directory
+    ///
+    /// # Return Values
+    ///   * KvsBuilder instance
+    pub fn working_dir<S>(mut self, working_dir: S) -> KvsBuilder
+    where
+        S: Into<PathBuf>,
+    {
+        self.working_dir = working_dir.into();
+        self
+    }
+
     /// Finalize the builder and open the key-value-storage
     ///
     /// Calls `Kvs::open` with the configured settings.
-    ///
-    /// # Features
-    ///   * `FEAT_REQ__KVS__default_values`
-    ///   * `FEAT_REQ__KVS__multiple_kvs`
-    ///   * `FEAT_REQ__KVS__integrity_check`
     ///
     /// # Return Values
     ///   * Ok: KVS instance
@@ -499,11 +536,7 @@ impl KvsBuilder {
     ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error
     ///   * `ErrorCode::UnmappedError`: Generic error
     pub fn build(self) -> Result<Kvs, ErrorCode> {
-        Kvs::open(
-            self.instance_id,
-            self.need_defaults.into(),
-            self.need_kvs.into(),
-        )
+        Kvs::open(self)
     }
 }
 
@@ -518,11 +551,6 @@ impl Kvs {
     ///   * `FEAT_REQ__KVS__multiple_kvs`
     ///   * `FEAT_REQ__KVS__integrity_check`
     ///
-    /// # Parameters
-    ///   * `instance_id`: Instance ID
-    ///   * `need_defaults`: Fail when no default file was found
-    ///   * `need_kvs`: Fail when no KVS file was found
-    ///
     /// # Return Values
     ///   * Ok: KVS instance
     ///   * `ErrorCode::ValidationFailed`: KVS hash validation failed
@@ -530,25 +558,40 @@ impl Kvs {
     ///   * `ErrorCode::KvsFileReadError`: KVS file read error
     ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error
     ///   * `ErrorCode::UnmappedError`: Generic error
-    pub fn open(
-        instance_id: InstanceId,
-        need_defaults: OpenNeedDefaults,
-        need_kvs: OpenNeedKvs,
-    ) -> Result<Kvs, ErrorCode> {
-        let filename_default = format!("kvs_{instance_id}_default");
-        let filename_prefix = format!("kvs_{instance_id}");
-        let filename_kvs = format!("{filename_prefix}_0");
+    pub(crate) fn open(builder: KvsBuilder) -> Result<Kvs, ErrorCode> {
+        let default = match builder.defaults {
+            KvsDefaults::File(filename) => Self::open_json(
+                &format!("{}/{filename}", builder.working_dir.display()),
+                builder.need_defaults,
+                OpenJsonVerifyHash::No,
+            )?,
+            KvsDefaults::String(data) => data
+                .parse::<JsonValue>()?
+                .get::<HashMap<_, _>>()
+                .ok_or(ErrorCode::JsonParserError)?
+                .iter()
+                .map(|(key, value)| (key.clone(), value.into()))
+                .collect(),
+        };
 
-        let default = Self::open_json(&filename_default, need_defaults, OpenJsonVerifyHash::No)?;
-        let kvs = Self::open_json(&filename_kvs, need_kvs, OpenJsonVerifyHash::Yes)?;
+        let kvs = Self::open_json(
+            &format!(
+                "{}/{}_0",
+                builder.working_dir.display(),
+                builder.filename_prefix
+            ),
+            builder.need_kvs,
+            OpenJsonVerifyHash::Yes,
+        )?;
 
-        println!("opened KVS: instance '{instance_id}'");
+        println!("opened KVS: instance '{}'", builder.instance_id);
         println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
 
         Ok(Self {
             kvs: Mutex::new(kvs),
             default,
-            filename_prefix,
+            filename_prefix: builder.filename_prefix,
+            working_dir: builder.working_dir,
             flush_on_exit: AtomicBool::new(true),
         })
     }
@@ -833,11 +876,19 @@ impl Kvs {
 
         let hash = RollingAdler32::from_buffer(&buf).hash();
 
-        let filename_json = format!("{}_0.json", self.filename_prefix);
+        let filename_json = format!(
+            "{}/{}_0.json",
+            self.working_dir.display(),
+            self.filename_prefix
+        );
         let data = String::from_utf8(buf)?;
         fs::write(filename_json, &data)?;
 
-        let filename_hash = format!("{}_0.hash", self.filename_prefix);
+        let filename_hash = format!(
+            "{}/{}_0.hash",
+            self.working_dir.display(),
+            self.filename_prefix
+        );
         fs::write(filename_hash, hash.to_be_bytes()).ok();
 
         Ok(())
