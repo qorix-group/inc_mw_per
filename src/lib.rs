@@ -19,8 +19,8 @@
 //! besides the Rust `std` library.
 //!
 //! The key-value-storage is opened or initialized with [`Kvs::open`] and automatically flushed on
-//! exit by default. This can be controlled by [`Kvs::flush_on_exit`]. It is possible to manually
-//! flush the KVS by calling [`Kvs::flush`].
+//! exit by default. This can be controlled by [`KvsBuilder::flush_on_exit`]. It is possible to
+//! manually flush the KVS by calling [`Kvs::flush`].
 //!
 //! All `TinyJSON` provided datatypes can be used:
 //!   * `Number`: `f64`
@@ -148,10 +148,7 @@ use std::fs;
 use std::ops::Index;
 use std::path::{Path, PathBuf};
 use std::string::FromUtf8Error;
-use std::sync::{
-    atomic::{self, AtomicBool},
-    Mutex, MutexGuard, PoisonError,
-};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use tinyjson::{JsonGenerateError, JsonGenerator, JsonParseError, JsonValue};
 
 /// Maximum number of snapshots
@@ -246,6 +243,9 @@ pub struct KvsBuilder {
     /// Need-KVS flag
     need_kvs: bool,
 
+    /// Flush on exit flag
+    flush_on_exit: bool,
+
     /// Filename prefix
     filename_prefix: String,
 
@@ -274,8 +274,8 @@ pub struct Kvs {
     /// Working directory
     working_dir: PathBuf,
 
-    /// Flush on exit flag
-    flush_on_exit: AtomicBool,
+    /// Flush on exit
+    flush_on_exit: bool,
 }
 
 /// Key-value-storage value
@@ -434,6 +434,7 @@ impl KvsBuilder {
             instance_id,
             need_defaults: false,
             need_kvs: false,
+            flush_on_exit: true,
             filename_prefix,
             defaults: KvsDefaults::File(filename_defaults),
             working_dir: std::env::current_dir()?,
@@ -461,6 +462,18 @@ impl KvsBuilder {
     ///   * KvsBuilder instance
     pub fn need_kvs(mut self, flag: bool) -> KvsBuilder {
         self.need_kvs = flag;
+        self
+    }
+
+    /// Configure if KVS should auto-flush on exit
+    ///
+    /// # Parameters
+    ///   * `flag`: Yes = `true` (default), no = `false`
+    ///
+    /// # Return Values
+    ///   * KvsBuilder instance
+    pub fn flush_on_exit(mut self, flag: bool) -> KvsBuilder {
+        self.flush_on_exit = flag;
         self
     }
 
@@ -544,7 +557,7 @@ impl Kvs {
     /// Open the key-value-storage
     ///
     /// Checks and opens a key-value-storage. Flush on exit is enabled by default and can be
-    /// controlled with [`flush_on_exit`](Self::flush_on_exit).
+    /// controlled with [`KvsBuilder::flush_on_exit`](KvsBuilder::flush_on_exit).
     ///
     /// # Features
     ///   * `FEAT_REQ__KVS__default_values`
@@ -592,17 +605,8 @@ impl Kvs {
             default,
             filename_prefix: builder.filename_prefix,
             working_dir: builder.working_dir,
-            flush_on_exit: AtomicBool::new(true),
+            flush_on_exit: builder.flush_on_exit,
         })
-    }
-
-    /// Control the flush on exit behaviour
-    ///
-    /// # Parameters
-    ///   * `flush_on_exit`: Flag to control flush-on-exit behaviour
-    pub fn flush_on_exit(self, flush_on_exit: bool) {
-        self.flush_on_exit
-            .store(flush_on_exit, atomic::Ordering::Relaxed);
     }
 
     /// Open and parse a JSON file
@@ -861,6 +865,38 @@ impl Kvs {
     ///   * `ErrorCode::ConversionFailed`: JSON could not serialize into String
     ///   * `ErrorCode::UnmappedError`: Unmapped error
     pub fn flush(&self) -> Result<(), ErrorCode> {
+        let data = self.flush_to_string()?;
+
+        self.snapshot_rotate()?;
+
+        let hash = RollingAdler32::from_buffer(data.as_bytes()).hash();
+
+        let filename_json = format!(
+            "{}/{}_0.json",
+            self.working_dir.display(),
+            self.filename_prefix
+        );
+        fs::write(filename_json, &data)?;
+
+        let filename_hash = format!(
+            "{}/{}_0.hash",
+            self.working_dir.display(),
+            self.filename_prefix
+        );
+        fs::write(filename_hash, hash.to_be_bytes()).ok();
+
+        Ok(())
+    }
+
+    /// Flush the in-memory key-value-storage to a JSON string
+    ///
+    /// # Return Values
+    ///   * Ok: Flush successful
+    ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
+    ///   * `ErrorCode::JsonGeneratorError`: Failed to serialize to JSON
+    ///   * `ErrorCode::ConversionFailed`: JSON could not serialize into String
+    ///   * `ErrorCode::UnmappedError`: Unmapped error
+    pub fn flush_to_string(&self) -> Result<String, ErrorCode> {
         let json: HashMap<String, JsonValue> = self
             .kvs
             .lock()?
@@ -872,26 +908,7 @@ impl Kvs {
         let mut gen = JsonGenerator::new(&mut buf).indent("  ");
         gen.generate(&json)?;
 
-        self.snapshot_rotate()?;
-
-        let hash = RollingAdler32::from_buffer(&buf).hash();
-
-        let filename_json = format!(
-            "{}/{}_0.json",
-            self.working_dir.display(),
-            self.filename_prefix
-        );
-        let data = String::from_utf8(buf)?;
-        fs::write(filename_json, &data)?;
-
-        let filename_hash = format!(
-            "{}/{}_0.hash",
-            self.working_dir.display(),
-            self.filename_prefix
-        );
-        fs::write(filename_hash, hash.to_be_bytes()).ok();
-
-        Ok(())
+        Ok(String::from_utf8(buf)?)
     }
 
     /// Get the count of snapshots
@@ -1025,7 +1042,7 @@ impl Kvs {
 
 impl Drop for Kvs {
     fn drop(&mut self) {
-        if self.flush_on_exit.load(atomic::Ordering::Relaxed) {
+        if self.flush_on_exit {
             self.flush().ok();
         }
     }
