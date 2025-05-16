@@ -18,9 +18,11 @@
 //! [Adler32](https://crates.io/crates/adler32) crate. No other direct dependencies are used
 //! besides the Rust `std` library.
 //!
-//! The key-value-storage is opened or initialized with [`Kvs::open`] and automatically flushed on
-//! exit by default. This can be controlled by [`Kvs::flush_on_exit`]. It is possible to manually
-//! flush the KVS by calling [`Kvs::flush`].
+//! The key-value-storage is opened or initialized with [`KvsBuilder::new`] where various settings
+//! can be applied before the KVS instance is created.
+//!
+//! Without configuration the KVS is flushed on exit by default. This can be controlled by
+//! [`Kvs::flush_on_exit`]. It is possible to manually flush the KVS by calling [`Kvs::flush`].
 //!
 //! All `TinyJSON` provided datatypes can be used:
 //!   * `Number`: `f64`
@@ -54,14 +56,14 @@
 //! ## Example Usage
 //!
 //! ```
-//! use rust_kvs::{ErrorCode, InstanceId, Kvs, OpenNeedDefaults, OpenNeedKvs, KvsValue};
+//! use rust_kvs::{ErrorCode, InstanceId, KvsBuilder, KvsValue};
 //! use std::collections::HashMap;
+//! use tempdir::TempDir;
 //!
 //! fn main() -> Result<(), ErrorCode> {
-//!     let kvs = Kvs::open(
-//!         InstanceId::new(0),
-//!         OpenNeedDefaults::Optional,
-//!         OpenNeedKvs::Optional)?;
+//!     let temp_dir = TempDir::new("").unwrap();
+//!     let temp_path = temp_dir.path().display().to_string();
+//!     let kvs = KvsBuilder::new(InstanceId::new(0)).dir(temp_path).build()?;
 //!
 //!     kvs.set_value("number", 123.0)?;
 //!     kvs.set_value("bool", true)?;
@@ -131,12 +133,6 @@
 //!     defines that `String` and `str` are always valid UTF-8.
 //!   * Feature `FEAT_REQ__KVS__supported_datatypes_values` is matched by using the same types that
 //!     the IPC will use for the Rust implementation.
-//!
-//! ## Todos
-//!
-//!   * Store the current working directory in the KVS struct to make sure snapshots are created at
-//!     the same place as the KVS was opened in case of the application changes the working
-//!     directory
 #![forbid(unsafe_code)]
 
 use adler32::RollingAdler32;
@@ -159,6 +155,7 @@ use tinyjson::{JsonGenerateError, JsonGenerator, JsonParseError, JsonValue};
 const KVS_MAX_SNAPSHOTS: usize = 3;
 
 /// Instance ID
+#[derive(Clone, Debug, PartialEq)]
 pub struct InstanceId(usize);
 
 /// Snapshot ID
@@ -235,6 +232,9 @@ pub struct KvsBuilder {
 
     /// Need-KVS flag
     need_kvs: bool,
+
+    /// Working directory
+    dir: Option<String>,
 }
 
 /// Key-value-storage data
@@ -279,7 +279,7 @@ pub enum KvsValue {
 }
 
 /// Need-Defaults flag
-pub enum OpenNeedDefaults {
+enum OpenNeedDefaults {
     /// Optional: Open defaults only if available
     Optional,
 
@@ -288,7 +288,7 @@ pub enum OpenNeedDefaults {
 }
 
 /// Need-KVS flag
-pub enum OpenNeedKvs {
+enum OpenNeedKvs {
     /// Optional: Use an empty KVS if no KVS is available
     Optional,
 
@@ -455,6 +455,7 @@ impl KvsBuilder {
             instance_id,
             need_defaults: false,
             need_kvs: false,
+            dir: None,
         }
     }
 
@@ -482,6 +483,17 @@ impl KvsBuilder {
         self
     }
 
+    /// Set the key-value-storage permanent storage directory
+    ///
+    /// # Parameters
+    ///   * `dir`: Path to permanent storage
+    ///
+    /// # Return Values
+    pub fn dir<P: Into<String>>(mut self, dir: P) -> KvsBuilder {
+        self.dir = Some(dir.into());
+        self
+    }
+
     /// Finalize the builder and open the key-value-storage
     ///
     /// Calls `Kvs::open` with the configured settings.
@@ -503,6 +515,7 @@ impl KvsBuilder {
             self.instance_id,
             self.need_defaults.into(),
             self.need_kvs.into(),
+            self.dir,
         )
     }
 }
@@ -530,13 +543,19 @@ impl Kvs {
     ///   * `ErrorCode::KvsFileReadError`: KVS file read error
     ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error
     ///   * `ErrorCode::UnmappedError`: Generic error
-    pub fn open(
+    fn open(
         instance_id: InstanceId,
         need_defaults: OpenNeedDefaults,
         need_kvs: OpenNeedKvs,
+        dir: Option<String>,
     ) -> Result<Kvs, ErrorCode> {
-        let filename_default = format!("kvs_{instance_id}_default");
-        let filename_prefix = format!("kvs_{instance_id}");
+        let dir = if let Some(dir) = dir {
+            format!("{dir}/")
+        } else {
+            "".to_string()
+        };
+        let filename_default = format!("{dir}kvs_{instance_id}_default");
+        let filename_prefix = format!("{dir}kvs_{instance_id}");
         let filename_kvs = format!("{filename_prefix}_0");
 
         let default = Self::open_json(&filename_default, need_defaults, OpenJsonVerifyHash::No)?;
@@ -1107,5 +1126,78 @@ impl Index<usize> for KvsValue {
             ),
         };
         &array[index]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+
+    #[must_use]
+    fn test_dir() -> (TempDir, String) {
+        let temp_dir = TempDir::new("").unwrap();
+        let temp_path = temp_dir.path().display().to_string();
+        (temp_dir, temp_path)
+    }
+
+    #[test]
+    fn test_new_kvs_builder() {
+        let instance_id = InstanceId::new(0);
+        let builder = KvsBuilder::new(instance_id.clone()).dir(test_dir().1);
+
+        assert_eq!(builder.instance_id, instance_id);
+        assert!(!builder.need_defaults);
+        assert!(!builder.need_kvs);
+    }
+
+    #[test]
+    fn test_need_defaults() {
+        let instance_id = InstanceId::new(0);
+        let builder = KvsBuilder::new(instance_id.clone())
+            .dir(test_dir().1)
+            .need_defaults(true);
+
+        assert!(builder.need_defaults);
+    }
+
+    #[test]
+    fn test_need_kvs() {
+        let instance_id = InstanceId::new(0);
+        let builder = KvsBuilder::new(instance_id.clone())
+            .dir(test_dir().1)
+            .need_kvs(true);
+
+        assert!(builder.need_kvs);
+    }
+
+    #[test]
+    fn test_build() {
+        let instance_id = InstanceId::new(0);
+        let builder = KvsBuilder::new(instance_id.clone()).dir(test_dir().1);
+
+        builder.build().unwrap();
+    }
+
+    #[test]
+    fn test_build_with_defaults() {
+        let instance_id = InstanceId::new(0);
+        let builder = KvsBuilder::new(instance_id.clone())
+            .dir(test_dir().1)
+            .need_defaults(true);
+
+        assert!(builder.build().is_err());
+    }
+
+    #[test]
+    fn test_build_with_kvs() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let builder = KvsBuilder::new(instance_id).dir(temp_dir.1).need_kvs(true);
+        builder.build().unwrap();
     }
 }
