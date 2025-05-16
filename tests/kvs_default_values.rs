@@ -12,7 +12,7 @@
 //! # Verify KVS Default Value Functionality
 
 use adler32::RollingAdler32;
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsValue, OpenNeedDefaults, OpenNeedKvs};
+use rust_kvs::{ErrorCode, InstanceId, KvsBuilder, KvsValue};
 use std::collections::HashMap;
 use tinyjson::{JsonGenerator, JsonValue};
 
@@ -50,11 +50,10 @@ fn kvs_default_values() -> Result<(), ErrorCode> {
     std::fs::write("kvs_0_default.hash", hash.to_be_bytes())?;
 
     // create KVS
-    let kvs = Kvs::open(
-        InstanceId::new(0),
-        OpenNeedDefaults::Required,
-        OpenNeedKvs::Optional,
-    )?;
+    let kvs = KvsBuilder::new(InstanceId::new(0))
+        .need_defaults(true)
+        .need_kvs(false)
+        .build()?;
 
     kvs.set_value("number2", 345.0)?;
     kvs.set_value("bool2", false)?;
@@ -87,11 +86,10 @@ fn kvs_default_values() -> Result<(), ErrorCode> {
     // drop the current instance with flush-on-exit enabled and reopen storage
     drop(kvs);
 
-    let kvs = Kvs::open(
-        InstanceId::new(0),
-        OpenNeedDefaults::Optional,
-        OpenNeedKvs::Required,
-    )?;
+    let kvs = KvsBuilder::new(InstanceId::new(0))
+        .need_defaults(false)
+        .need_kvs(true)
+        .build()?;
 
     assert_eq!(kvs.get_value("bool1")?, KvsValue::Boolean(true));
     assert!(kvs.has_default_value("bool1"));
@@ -123,11 +121,10 @@ fn kvs_default_values() -> Result<(), ErrorCode> {
     std::fs::write("kvs_0_default.json", &data)?;
     std::fs::write("kvs_0_default.hash", hash.to_be_bytes())?;
 
-    let kvs = Kvs::open(
-        InstanceId::new(0),
-        OpenNeedDefaults::Optional,
-        OpenNeedKvs::Required,
-    )?;
+    let kvs = KvsBuilder::new(InstanceId::new(0))
+        .need_defaults(false)
+        .need_kvs(true)
+        .build()?;
 
     assert_eq!(kvs.get_value("number1")?, KvsValue::Number(987.0));
     assert!(kvs.has_default_value("number1"));
