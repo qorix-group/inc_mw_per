@@ -1155,6 +1155,8 @@ impl Index<usize> for KvsValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::thread;
     use tempdir::TempDir;
 
     #[must_use]
@@ -1222,5 +1224,188 @@ mod tests {
             .unwrap();
         let builder = KvsBuilder::new(instance_id).dir(temp_dir.1).need_kvs(true);
         builder.build().unwrap();
+    }
+
+    #[test]
+    fn test_unknown_error_code_from_io_error() {
+        let error = std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid input provided");
+        assert_eq!(ErrorCode::from(error), ErrorCode::UnmappedError);
+    }
+
+    #[test]
+    fn test_unknown_error_code_from_json_parse_error() {
+        let error = tinyjson::JsonParser::new("[1, 2, 3".chars())
+            .parse()
+            .unwrap_err();
+        assert_eq!(ErrorCode::from(error), ErrorCode::JsonParserError);
+    }
+
+    #[test]
+    fn test_unknown_error_code_from_json_generate_error() {
+        let data: JsonValue = JsonValue::Number(f64::INFINITY);
+        let error = data.stringify().unwrap_err();
+        assert_eq!(ErrorCode::from(error), ErrorCode::JsonGeneratorError);
+    }
+
+    #[test]
+    fn test_conversion_failed_from_utf8_error() {
+        // test from: https://doc.rust-lang.org/std/string/struct.FromUtf8Error.html
+        let bytes = vec![0, 159];
+        let error = String::from_utf8(bytes).unwrap_err();
+        assert_eq!(ErrorCode::from(error), ErrorCode::ConversionFailed);
+    }
+
+    #[test]
+    fn test_conversion_failed_from_slice_error() {
+        let bytes = [0x12, 0x34, 0x56, 0x78, 0xab];
+        let bytes_ptr: &[u8] = &bytes;
+        let error = TryInto::<[u8; 8]>::try_into(bytes_ptr).unwrap_err();
+        assert_eq!(ErrorCode::from(error), ErrorCode::ConversionFailed);
+    }
+
+    #[test]
+    fn test_conversion_failed_from_vec_u8() {
+        let bytes: Vec<u8> = vec![];
+        assert_eq!(ErrorCode::from(bytes), ErrorCode::ConversionFailed);
+    }
+
+    #[test]
+    fn test_mutex_lock_failed_from_poison_error() {
+        let mutex: Arc<Mutex<HashMap<String, KvsValue>>> = Arc::default();
+
+        // test from: https://doc.rust-lang.org/std/sync/struct.PoisonError.html
+        let c_mutex = Arc::clone(&mutex);
+        let _ = thread::spawn(move || {
+            let _unused = c_mutex.lock().unwrap();
+            panic!();
+        })
+        .join();
+
+        let error = mutex.lock().unwrap_err();
+        assert_eq!(ErrorCode::from(error), ErrorCode::MutexLockFailed);
+    }
+
+    #[test]
+    fn coverage_flush_on_exit() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        kvs.flush_on_exit(true);
+    }
+
+    #[test]
+    fn coverage_reset() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.reset();
+    }
+
+    #[test]
+    fn coverage_get_all_keys() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.set_value("test", KvsValue::Number(1.0));
+        let _ = kvs.get_all_keys();
+    }
+
+    #[test]
+    fn coverage_key_exists() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.key_exists("test");
+    }
+
+    #[test]
+    fn coverage_get_default_value() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.get_default_value("test");
+    }
+
+    #[test]
+    fn coverage_has_default_value() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.has_default_value("test");
+    }
+
+    #[test]
+    fn coverage_remove_key() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.remove_key("test");
+        let _ = kvs.set_value("test", KvsValue::Number(1.0));
+        let _ = kvs.remove_key("test");
+    }
+
+    #[test]
+    fn coverage_restore_snapshot() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.flush();
+        let _ = kvs.snapshot_restore(SnapshotId::new(1));
+        let _ = kvs.snapshot_restore(SnapshotId::new(0));
+    }
+
+    #[test]
+    fn coverage_get_filename() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
+        let _ = kvs.get_kvs_filename(SnapshotId::new(0));
+    }
+
+    #[test]
+    fn coverage_get_value() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = Arc::new(
+            KvsBuilder::new(instance_id.clone())
+                .dir(temp_dir.1.clone())
+                .build()
+                .unwrap(),
+        );
+        let _ = kvs.set_value("test", KvsValue::Number(123.0));
+
+        let c_kvs = kvs.clone();
+        let _ = thread::spawn(move || {
+            let _ = c_kvs.get_value("test");
+            panic!();
+        })
+        .join();
     }
 }
