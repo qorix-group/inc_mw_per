@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 adler32 = "1.2.0"
-tempdir = "0.3.7"
 tinyjson = "2.5.1"
 pico-args = "0.5"
+
+[dev-dependencies]
+tempdir = "0.3.7"
 
 [[bin]]
 name = "kvs_tool"
