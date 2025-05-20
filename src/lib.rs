@@ -1262,7 +1262,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_flush_on_exit() {
+    fn test_flush_on_exit() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1273,7 +1273,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_reset() {
+    fn test_reset() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1284,7 +1284,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_get_all_keys() {
+    fn test_get_all_keys() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1296,7 +1296,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_key_exists() {
+    fn test_key_exists() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1307,7 +1307,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_get_default_value() {
+    fn test_get_default_value() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1318,7 +1318,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_is_value_default() {
+    fn test_is_value_default() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1329,7 +1329,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_remove_key() {
+    fn test_remove_key() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1342,7 +1342,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_restore_snapshot() {
+    fn test_restore_snapshot() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1355,7 +1355,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_get_filename() {
+    fn test_get_filename() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = KvsBuilder::new(instance_id.clone())
@@ -1366,7 +1366,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_get_value() {
+    fn test_get_value() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
         let kvs = Arc::new(
@@ -1383,5 +1383,11 @@ mod tests {
             panic!();
         })
         .join();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_kvs_value_array_index_fail() {
+        let _ = KvsValue::Number(123.0)[10];
     }
 }
