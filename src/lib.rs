@@ -381,28 +381,28 @@ impl From<JsonGenerateError> for ErrorCode {
 
 impl From<FromUtf8Error> for ErrorCode {
     fn from(cause: FromUtf8Error) -> Self {
-        eprintln!("error: UTF-8 conversion failed: {:#?}", cause);
+        eprintln!("error: UTF-8 conversion failed: {cause:#?}");
         ErrorCode::ConversionFailed
     }
 }
 
 impl From<TryFromSliceError> for ErrorCode {
     fn from(cause: TryFromSliceError) -> Self {
-        eprintln!("error: try_into from slice failed: {:#?}", cause);
+        eprintln!("error: try_into from slice failed: {cause:#?}");
         ErrorCode::ConversionFailed
     }
 }
 
 impl From<Vec<u8>> for ErrorCode {
     fn from(cause: Vec<u8>) -> Self {
-        eprintln!("error: try_into from u8 vector failed: {:#?}", cause);
+        eprintln!("error: try_into from u8 vector failed: {cause:#?}");
         ErrorCode::ConversionFailed
     }
 }
 
 impl From<PoisonError<MutexGuard<'_, HashMap<std::string::String, KvsValue>>>> for ErrorCode {
     fn from(cause: PoisonError<MutexGuard<'_, HashMap<std::string::String, KvsValue>>>) -> Self {
-        eprintln!("error: Mutex locking failed: {:#?}", cause);
+        eprintln!("error: Mutex locking failed: {cause:#?}");
         ErrorCode::MutexLockFailed
     }
 }
@@ -1144,8 +1144,7 @@ impl Index<usize> for KvsValue {
         let array = match self {
             KvsValue::Array(a) => a,
             _ => panic!(
-                "Attempted to access to an array with index {} but actually the value was {:?}",
-                index, self,
+                "Attempted to access to an array with index {index} but actually the value was {self:?}",
             ),
         };
         &array[index]
