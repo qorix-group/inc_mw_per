@@ -18,3 +18,6 @@ path = "src/kvs_tool.rs"
 [lib]
 name = "rust_kvs"
 path = "src/lib.rs"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

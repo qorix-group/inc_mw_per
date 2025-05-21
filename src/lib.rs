@@ -132,6 +132,7 @@
 //!   * Feature `FEAT_REQ__KVS__supported_datatypes_values` is matched by using the same types that
 //!     the IPC will use for the Rust implementation.
 #![forbid(unsafe_code)]
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 use adler32::RollingAdler32;
 use std::array::TryFromSliceError;
@@ -957,14 +958,14 @@ impl Kvs {
             if let Err(err) = res {
                 if err.kind() != std::io::ErrorKind::NotFound {
                     return Err(err.into());
+                } else {
+                    continue;
                 }
             }
 
             let res = fs::rename(snap_old, snap_new);
             if let Err(err) = res {
-                if err.kind() != std::io::ErrorKind::NotFound {
-                    return Err(err.into());
-                }
+                return Err(err.into());
             }
         }
 
@@ -1217,10 +1218,19 @@ mod tests {
     fn test_build_with_kvs() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
+
+        // negative
+        let builder = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .need_kvs(true);
+        assert!(builder.build().is_err());
+
         KvsBuilder::new(instance_id.clone())
             .dir(temp_dir.1.clone())
             .build()
             .unwrap();
+
+        // positive
         let builder = KvsBuilder::new(instance_id).dir(temp_dir.1).need_kvs(true);
         builder.build().unwrap();
     }
@@ -1333,11 +1343,24 @@ mod tests {
     fn test_get_default_value() {
         let instance_id = InstanceId::new(0);
         let temp_dir = test_dir();
+
+        std::fs::copy(
+            "tests/kvs_0_default.json",
+            format!("{}/kvs_0_default.json", temp_dir.1.clone()),
+        )
+        .unwrap();
+
         let kvs = KvsBuilder::new(instance_id.clone())
             .dir(temp_dir.1.clone())
+            .need_defaults(true)
             .build()
             .unwrap();
+
+        // negative
         let _ = kvs.get_default_value("test");
+
+        // positive
+        let _ = kvs.get_default_value("bool1");
     }
 
     #[test]
@@ -1372,9 +1395,42 @@ mod tests {
             .dir(temp_dir.1.clone())
             .build()
             .unwrap();
+
+        assert!(kvs.flush().is_ok());
+        assert!(kvs.snapshot_restore(SnapshotId::new(1)).is_err());
+        assert!(kvs.flush().is_ok());
+        assert!(kvs.snapshot_restore(SnapshotId::new(1)).is_ok());
+        assert!(kvs.snapshot_restore(SnapshotId::new(0)).is_err());
+
+        let snapshot = format!("{}/kvs_0_1.hash", temp_dir.1.clone());
+        let _ = std::fs::remove_file(snapshot.clone());
+
+        assert!(kvs.snapshot_restore(SnapshotId::new(1)).is_err());
+    }
+
+    #[test]
+    fn test_rotate_snapshot() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = KvsBuilder::new(instance_id.clone())
+            .dir(temp_dir.1.clone())
+            .build()
+            .unwrap();
         let _ = kvs.flush();
-        let _ = kvs.snapshot_restore(SnapshotId::new(1));
-        let _ = kvs.snapshot_restore(SnapshotId::new(0));
+
+        let metadata = fs::metadata(temp_dir.1.clone()).unwrap();
+        let mut permissions = metadata.permissions();
+
+        permissions.set_readonly(true);
+        fs::set_permissions(temp_dir.1.clone(), permissions.clone()).unwrap();
+        assert!(kvs.snapshot_rotate().is_err());
+
+        permissions.set_readonly(false);
+        fs::set_permissions(temp_dir.1.clone(), permissions).unwrap();
+        assert!(kvs.snapshot_rotate().is_ok());
+
+        assert!(fs::remove_file(format!("{}/kvs_0_1.json", temp_dir.1.clone())).is_ok());
+        assert!(kvs.snapshot_rotate().is_err());
     }
 
     #[test]
@@ -1412,5 +1468,65 @@ mod tests {
     #[should_panic]
     fn test_kvs_value_array_index_fail() {
         let _ = KvsValue::Number(123.0)[10];
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_from_kvs_value_f64_null() {
+        let _ = f64::from(&KvsValue::Null);
+    }
+
+    #[test]
+    fn test_get_inner_value() {
+        let value = KvsValue::Null;
+        let _ = f64::get_inner_value(&value);
+    }
+
+    #[test]
+    fn test_drop() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+        let kvs = Arc::new(
+            KvsBuilder::new(instance_id.clone())
+                .dir(temp_dir.1.clone())
+                .build()
+                .unwrap(),
+        );
+        kvs.flush_on_exit(false);
+    }
+
+    impl<'a> TryFrom<&'a KvsValue> for u64 {
+        type Error = ErrorCode;
+
+        fn try_from(_val: &'a KvsValue) -> Result<u64, Self::Error> {
+            Err(ErrorCode::ConversionFailed)
+        }
+    }
+
+    #[test]
+    fn test_get_value_try_from_error() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+
+        std::fs::copy(
+            "tests/kvs_0_default.json",
+            format!("{}/kvs_0_default.json", temp_dir.1.clone()),
+        )
+        .unwrap();
+
+        let kvs = Arc::new(
+            KvsBuilder::new(instance_id.clone())
+                .dir(temp_dir.1.clone())
+                .need_defaults(true)
+                .build()
+                .unwrap(),
+        );
+        let _ = kvs.set_value("test", KvsValue::Number(123.0));
+
+        // stored value
+        let _ = kvs.get_value::<u64>("test");
+
+        // default value
+        let _ = kvs.get_value::<u64>("bool1");
     }
 }
