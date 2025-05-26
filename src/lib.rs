@@ -1350,6 +1350,12 @@ mod tests {
         )
         .unwrap();
 
+        std::fs::copy(
+            "tests/kvs_0_default.hash",
+            format!("{}/kvs_0_default.hash", temp_dir.1.clone()),
+        )
+        .unwrap();
+
         let kvs = KvsBuilder::new(instance_id.clone())
             .dir(temp_dir.1.clone())
             .need_defaults(true)
@@ -1471,9 +1477,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_from_kvs_value_f64_null() {
-        let _ = f64::from(&KvsValue::Null);
+        let res = f64::try_from(&KvsValue::Null);
+        assert!(res.is_err());
     }
 
     #[test]
@@ -1514,6 +1520,12 @@ mod tests {
         )
         .unwrap();
 
+        std::fs::copy(
+            "tests/kvs_0_default.hash",
+            format!("{}/kvs_0_default.hash", temp_dir.1.clone()),
+        )
+        .unwrap();
+
         let kvs = Arc::new(
             KvsBuilder::new(instance_id.clone())
                 .dir(temp_dir.1.clone())
@@ -1524,9 +1536,9 @@ mod tests {
         let _ = kvs.set_value("test", KvsValue::Number(123.0));
 
         // stored value
-        let _ = kvs.get_value::<u64>("test");
+        let _ = kvs.get_value("test");
 
         // default value
-        let _ = kvs.get_value::<u64>("bool1");
+        let _ = kvs.get_value("bool1");
     }
 }
