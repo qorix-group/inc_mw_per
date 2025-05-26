@@ -1,5 +1,5 @@
 {
   "string1": "Hello",
-  "bool1": false,
-  "number1": 987
+  "bool1": true,
+  "number1": 123
 }
