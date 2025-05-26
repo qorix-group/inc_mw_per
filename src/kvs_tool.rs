@@ -155,17 +155,14 @@ fn _getkey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
         e
     })?;
 
-    let is_default = kvs.is_value_default(&key).map_err(|e| {
-        eprintln!("KVS get:is_value_default failed: {:?}", e);
-        e
-    })?;
+    let has_default = kvs.has_default_value(&key);
 
     if key_exist {
         println!("Key '{}' exists!", key);
     } else {
         println!("Key '{}' does not exist!", key);
-        if is_default {
-            println!("Key is default value!");
+        if has_default {
+            println!("Key has default value!");
         } else {
             println!("Key is not default value!");
             return Err(ErrorCode::KeyNotFound);
@@ -208,49 +205,73 @@ fn _getkey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
 
     match get_mode {
         SupportedTypes::Number => {
-            let value = kvs.get_value::<f64>(&key).map_err(|e| {
+            let value = kvs.get_value(&key).map_err(|e| {
                 eprintln!("KVS get failed: {:?}", e);
                 e
             })?;
-            println!("Key:'{}' \nValue: {}", key, value);
+
+            if let KvsValue::Number(value) = value {
+                println!("Key:'{}' \nValue: {}", key, value);
+            } else {
+                return Err(ErrorCode::ConversionFailed);
+            }
         }
         SupportedTypes::Bool => {
-            let value = kvs.get_value::<bool>(&key).map_err(|e| {
+            let value = kvs.get_value(&key).map_err(|e| {
                 eprintln!("KVS get failed: {:?}", e);
                 e
             })?;
-            println!("Key:'{}' \nValue: {}", key, value);
+
+            if let KvsValue::Boolean(value) = value {
+                println!("Key:'{}' \nValue: {}", key, value);
+            } else {
+                return Err(ErrorCode::ConversionFailed);
+            }
         }
         SupportedTypes::String => {
-            let value = kvs.get_value::<String>(&key).map_err(|e| {
+            let value = kvs.get_value(&key).map_err(|e| {
                 eprintln!("KVS get failed: {:?}", e);
                 e
             })?;
-            println!("Key:'{}' \nValue: {}", key, value);
+
+            if let KvsValue::String(value) = value {
+                println!("Key:'{}' \nValue: {}", key, value);
+            } else {
+                return Err(ErrorCode::ConversionFailed);
+            }
         }
         // Different Syntax to be compliant with "clippy::let_unit_value"
         SupportedTypes::Null => {
-            kvs.get_value::<()>(&key).map_err(|e| {
+            kvs.get_value(&key).map_err(|e| {
                 eprintln!("KVS get failed: {:?}", e);
                 e
             })?;
-            println!("Key:'{}' \nValue: {:?}", key, ());
+
+            println!("Key:'{}' \nValue: ()", key);
         }
         SupportedTypes::Array => {
-            let value = kvs.get_value::<Vec<KvsValue>>(&key).map_err(|e| {
+            let value = kvs.get_value(&key).map_err(|e| {
                 eprintln!("KVS get failed: {:?}", e);
                 e
             })?;
-            println!("Key:'{}' \nValue: {:?}", key, value);
+
+            if let KvsValue::Array(value) = value {
+                println!("Key:'{}' \nValue: {:#?}", key, value);
+            } else {
+                return Err(ErrorCode::ConversionFailed);
+            }
         }
         SupportedTypes::Object => {
-            let value = kvs
-                .get_value::<HashMap<String, KvsValue>>(&key)
-                .map_err(|e| {
-                    eprintln!("KVS get failed: {:?}", e);
-                    e
-                })?;
-            println!("Key:'{}' \nValue: {:?}", key, value);
+            let value = kvs.get_value(&key).map_err(|e| {
+                eprintln!("KVS get failed: {:?}", e);
+                e
+            })?;
+
+            if let KvsValue::Object(value) = value {
+                println!("Key:'{}' \nValue: {:#?}", key, value);
+            } else {
+                return Err(ErrorCode::ConversionFailed);
+            }
         }
 
         SupportedTypes::Invalid => {
