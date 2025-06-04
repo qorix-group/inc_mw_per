@@ -158,6 +158,7 @@ const KVS_MAX_SNAPSHOTS: usize = 3;
 pub struct InstanceId(usize);
 
 /// Snapshot ID
+#[derive(PartialEq, Debug)]
 pub struct SnapshotId(usize);
 
 /// Runtime Error Codes
@@ -1540,5 +1541,108 @@ mod tests {
 
         // default value
         let _ = kvs.get_value("bool1");
+    }
+
+    #[test]
+    fn test_snapshot_id() {
+        let snapshot_id: SnapshotId = 123.into();
+        assert_eq!(snapshot_id, SnapshotId(123));
+    }
+
+    #[test]
+    fn test_set_default_value() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+
+        std::fs::copy(
+            "tests/kvs_0_default.json",
+            format!("{}/kvs_0_default.json", temp_dir.1.clone()),
+        )
+        .unwrap();
+
+        std::fs::copy(
+            "tests/kvs_0_default.hash",
+            format!("{}/kvs_0_default.hash", temp_dir.1.clone()),
+        )
+        .unwrap();
+
+        let kvs = Arc::new(
+            KvsBuilder::new(instance_id.clone())
+                .dir(temp_dir.1.clone())
+                .need_defaults(true)
+                .build()
+                .unwrap(),
+        );
+
+        assert_eq!(
+            kvs.get_value("string1"),
+            Ok(KvsValue::String("Hello".to_string()))
+        );
+        assert!(kvs
+            .set_value("string1", KvsValue::String("Bye".to_string()))
+            .is_ok());
+        assert_eq!(
+            kvs.get_value("string1"),
+            Ok(KvsValue::String("Bye".to_string()))
+        );
+        assert!(kvs.set_default_value("string1").is_ok());
+        assert_eq!(
+            kvs.get_value("string1"),
+            Ok(KvsValue::String("Hello".to_string()))
+        );
+        assert_eq!(
+            kvs.set_default_value("string2").err(),
+            Some(ErrorCode::KeyDefaultNotFound)
+        );
+    }
+
+    #[test]
+    fn test_has_default_value_with_mutex_lock_fail() {
+        let instance_id = InstanceId::new(0);
+        let temp_dir = test_dir();
+
+        std::fs::copy(
+            "tests/kvs_0_default.json",
+            format!("{}/kvs_0_default.json", temp_dir.1.clone()),
+        )
+        .unwrap();
+
+        std::fs::copy(
+            "tests/kvs_0_default.hash",
+            format!("{}/kvs_0_default.hash", temp_dir.1.clone()),
+        )
+        .unwrap();
+
+        let kvs = Arc::new(
+            KvsBuilder::new(instance_id.clone())
+                .dir(temp_dir.1.clone())
+                .need_defaults(true)
+                .build()
+                .unwrap(),
+        );
+
+        // test from: https://doc.rust-lang.org/std/sync/struct.PoisonError.html
+        let c_kvs = kvs.clone();
+        let _ = thread::spawn(move || {
+            let _unused = c_kvs.kvs.lock().unwrap();
+            panic!();
+        })
+        .join();
+
+        assert!(!kvs.has_default_value("string1"));
+    }
+
+    #[test]
+    fn test_try_from_kvs_value() {
+        assert!(f64::try_from(&KvsValue::Number(123.0)).is_ok());
+        assert!(<()>::try_from(&KvsValue::Null).is_ok());
+        assert_eq!(
+            <()>::try_from(&KvsValue::Number(123.0)),
+            Err(ErrorCode::InvalidValueType)
+        );
+        assert_eq!(
+            u64::try_from(&KvsValue::Number(123.0)),
+            Err(ErrorCode::ConversionFailed)
+        );
     }
 }
