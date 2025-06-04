@@ -151,6 +151,9 @@ use std::sync::{
 };
 use tinyjson::{JsonGenerateError, JsonGenerator, JsonParseError, JsonValue, UnexpectedValue};
 
+mod kvs_async;
+pub use kvs_async::*;
+
 /// Define the maximum count of elements that can be stored in the KVS
 ///
 /// Feature: `FEAT_REQ__KVS__maximum_size`
