@@ -7,3 +7,31 @@ test --test_output=errors
 
 common --registry=https://raw.githubusercontent.com/eclipse-score/bazel_registry/main/
 common --registry=https://bcr.bazel.build
+
+#clippy
+build --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
+build --output_groups=+clippy_checks
+
+#rustfmt
+build --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
+build --output_groups=+rustfmt_checks
+
+#code coverage
+
+# Enable debug builds (so symbols aren’t stripped)
+build:coverage --compilation_mode=dbg
+
+# Only instrument your src/ package
+build:coverage --instrumentation_filter=//src
+
+# Ask Bazel to generate an lcov report
+build:coverage --combined_report=lcov
+
+# Export RUSTFLAGS so rustc uses LLVM’s instrument-coverage pass
+build:coverage --@rules_rust//rust:rustc_flags=-Cinstrument-coverage
+build:coverage --@rules_rust//rust:rustc_flags=-Ccodegen-units=1
+test:coverage  --test_env=RUSTFLAGS=-Cinstrument-coverage
+
+
+# Tell Bazel to include coverage data from passing tests
+test:coverage --test_output=errors

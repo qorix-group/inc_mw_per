@@ -1,0 +1,22 @@
+{
+  "bool": true,
+  "number": 123,
+  "array": [
+    456,
+    false,
+    "Second"
+  ],
+  "string": "First",
+  "object": {
+    "sub-bool": true,
+    "sub-number": 789,
+    "sub-null": null,
+    "sub-array": [
+      1246,
+      false,
+      "Fourth"
+    ],
+    "sub-string": "Third"
+  },
+  "null": null
+}

@@ -40,4 +40,9 @@ rust_binary(
 rust_test(
     name = "tests",
     crate = ":rust_kvs",
+    rustc_flags = [
+      "-Cinstrument-coverage",
+      "-Ccodegen-units=1",
+    ],    
+    tags  = ["no_rustfmt", "no_clippy"],
 )

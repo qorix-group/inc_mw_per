@@ -30,7 +30,7 @@ use_repo(python)
 bazel_dep(name = "googletest", version = "1.14.0")
 
 # Rust rules for Bazel
-bazel_dep(name = "rules_rust", version = "0.56.0")
+bazel_dep(name = "rules_rust", version = "0.61.0")
 
 # Checker rule for CopyRight checks/fixs
 bazel_dep(name = "score_cr_checker", version = "0.2.2")
@@ -66,7 +66,7 @@ bazel_dep(name = "score_docs_as_code", version = "0.2.4")
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
-    edition = "2021",
+    edition = "2024",
     versions = ["1.85.0"],
 )
 

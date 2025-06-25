@@ -1,0 +1,13 @@
+#!/bin/bash
+# qnx-qcc — drop Rust's -nodefaultlibs then invoke QCC
+
+# collect all args except “-nodefaultlibs”
+newargs=()
+for a in "$@"; do
+  if [ "$a" != "-nodefaultlibs" ]; then
+    newargs+=("$a")
+  fi
+done
+
+exec /home/dcalavrezo/qnx800/host/linux/x86_64/usr/bin/qcc \
+     -Vgcc_ntoaarch64le -lang-c++ "${newargs[@]}"

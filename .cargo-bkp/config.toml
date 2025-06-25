@@ -1,0 +1,10 @@
+# .cargo/config.toml
+[build]
+target = "aarch64-unknown-nto-qnx800"
+
+[target.aarch64-unknown-nto-qnx800]
+linker = "./qnx-qcc"
+rustflags = ["-C", "relro-level=off"]
+
+
+

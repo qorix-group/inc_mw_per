@@ -826,8 +826,8 @@ impl Kvs {
             .collect();
         let json = JsonValue::from(json);
         let mut buf = Vec::new();
-        let mut gen = JsonGenerator::new(&mut buf).indent("  ");
-        gen.generate(&json)?;
+        let mut generator = JsonGenerator::new(&mut buf).indent("  ");
+        generator.generate(&json)?;
 
         self.snapshot_rotate()?;
 

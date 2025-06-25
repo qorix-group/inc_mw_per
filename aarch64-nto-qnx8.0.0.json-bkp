@@ -1,0 +1,19 @@
+{
+  "llvm-target": "aarch64-unknown-nto-qnx8.0.0",
+  "data-layout": "e-m:e-i64:64-i128:128-n32:64-S128",
+  "target-endian": "little",
+  "target-pointer-width": "64",
+  "os": "qnx",
+  "arch": "aarch64",
+  "vendor": "qnx",
+  "env": "",
+  "linker": "qcc",
+  "linker-flavor": "gcc",
+  "panic-strategy": "abort",
+  "executables": true,
+  "relocation-model": "static",
+  "no-compiler-rt": true,
+  "disable-redzone": true,
+  "eliminate-frame-pointer": false,
+  "features": "+neon,+v8a"
+}
