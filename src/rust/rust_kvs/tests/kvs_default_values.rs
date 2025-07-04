@@ -13,7 +13,6 @@
 
 use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue};
 use std::collections::HashMap;
-use std::env::set_current_dir;
 use tempfile::tempdir;
 use tinyjson::{JsonGenerator, JsonValue};
 
@@ -26,10 +25,12 @@ use tinyjson::{JsonGenerator, JsonValue};
 ///   * Change in default must be ignored when key was once set
 #[test]
 fn kvs_without_defaults() -> Result<(), ErrorCode> {
+    // Temp directory.
     let dir = tempdir()?;
-    set_current_dir(dir.path())?;
+    let dir_path = dir.path().to_path_buf();
 
     // create defaults file
+    let default_file_path = dir_path.join("kvs_0_default.json");
     let defaults: HashMap<String, KvsValue> = HashMap::from([
         ("number1".to_string(), KvsValue::from(123.0)),
         ("bool1".to_string(), true.into()),
@@ -43,10 +44,10 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     gen.generate(&json)?;
 
     let data = String::from_utf8(buf)?;
-    std::fs::write("kvs_0_default.json", &data)?;
+    std::fs::write(default_file_path.clone(), &data)?;
 
     // create KVS
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path.clone())
         .need_defaults(true)
         .need_kvs(false)
         .build()?;
@@ -82,7 +83,7 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     // drop the current instance with flush-on-exit enabled and reopen storage
     drop(kvs);
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path.clone())
         .need_defaults(false)
         .need_kvs(true)
         .build()?;
@@ -110,9 +111,9 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     gen.generate(&json)?;
 
     let data = String::from_utf8(buf)?;
-    std::fs::write("kvs_0_default.json", &data)?;
+    std::fs::write(default_file_path, &data)?;
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path)
         .need_defaults(false)
         .need_kvs(true)
         .build()?;

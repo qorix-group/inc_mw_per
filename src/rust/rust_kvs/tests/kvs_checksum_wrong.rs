@@ -12,16 +12,16 @@
 //! # Verify KVS Open with wrong Checksum
 
 use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue, SnapshotId};
-use std::env::set_current_dir;
 use tempfile::tempdir;
 
 /// Create a KVS, close it, modify checksum and try to reopen it.
 #[test]
 fn kvs_checksum_wrong() -> Result<(), ErrorCode> {
+    // Temp directory.
     let dir = tempdir()?;
-    set_current_dir(dir.path())?;
+    let dir_path = dir.path().to_path_buf();
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path.clone())
         .need_defaults(false)
         .need_kvs(false)
         .build()?;
@@ -49,7 +49,7 @@ fn kvs_checksum_wrong() -> Result<(), ErrorCode> {
     std::fs::write(hash_filename, vec![0x12, 0x34, 0x56, 0x78])?;
 
     // opening must fail because of the missing checksum file
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path)
         .need_defaults(false)
         .need_kvs(true)
         .build();
