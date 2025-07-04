@@ -12,16 +12,16 @@
 //! # Verify File Check for non-existing Defaults File
 
 use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsBuilder};
-use std::env::set_current_dir;
 use tempfile::tempdir;
 
 /// Start with no KVS and check if the `need_defaults` flag is working
 #[test]
 fn kvs_check_needs_defaults() -> Result<(), ErrorCode> {
+    // Temp directory.
     let dir = tempdir()?;
-    set_current_dir(dir.path())?;
+    let dir_path = dir.path().to_path_buf();
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path)
         .need_defaults(true)
         .need_kvs(false)
         .build();

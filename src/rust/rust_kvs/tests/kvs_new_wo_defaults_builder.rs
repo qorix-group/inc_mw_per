@@ -13,16 +13,16 @@
 
 use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue};
 use std::collections::HashMap;
-use std::env::set_current_dir;
 use tempfile::tempdir;
 
 /// Create a key-value-storage without defaults via builder
 #[test]
 fn kvs_without_defaults_builder() -> Result<(), ErrorCode> {
+    // Temp directory.
     let dir = tempdir()?;
-    set_current_dir(dir.path())?;
+    let dir_path = dir.path().to_path_buf();
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path.clone())
         .need_defaults(false)
         .need_kvs(false)
         .build()?;
@@ -60,7 +60,7 @@ fn kvs_without_defaults_builder() -> Result<(), ErrorCode> {
     // drop the current instance with flush-on-exit enabled and reopen storage
     drop(kvs);
 
-    let builder = KvsBuilder::<Kvs>::new(InstanceId::new(0));
+    let builder = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path);
     let builder = builder.need_defaults(false);
     let builder = builder.need_kvs(true);
     let kvs = builder.build()?;
