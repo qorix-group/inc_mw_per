@@ -471,7 +471,7 @@ pub trait KvsApi {
         value: J,
     ) -> Result<(), ErrorCode>;
     fn remove_key(&self, key: &str) -> Result<(), ErrorCode>;
-    fn flush_on_exit(self, flush_on_exit: bool);
+    fn flush_on_exit(&self, flush_on_exit: bool);
     fn flush(&self) -> Result<(), ErrorCode>;
     fn snapshot_count(&self) -> usize;
     fn snapshot_max_count() -> usize
@@ -722,7 +722,7 @@ impl KvsApi for Kvs {
     ///
     /// # Parameters
     ///   * `flush_on_exit`: Flag to control flush-on-exit behaviour
-    fn flush_on_exit(self, flush_on_exit: bool) {
+    fn flush_on_exit(&self, flush_on_exit: bool) {
         self.flush_on_exit
             .store(flush_on_exit, atomic::Ordering::Relaxed);
     }
