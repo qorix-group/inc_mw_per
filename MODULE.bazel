@@ -72,7 +72,7 @@ bazel_dep(name = "score_docs_as_code", version = "0.3.3")
 
 git_override(
     module_name = "score_docs_as_code",
-    remote = "git@github.com:qorix-group/docs-as-code",
+    remote = "https://github.com/qorix-group/docs-as-code",
     commit = "5ceb424fe51d785bfdd438a0649dc2b8a6d22faa",
 )
 
