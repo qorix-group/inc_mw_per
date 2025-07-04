@@ -21,6 +21,8 @@ This documentation describes the `rust_kvs` crate, which provides a key-value st
    :depth: 2
    :local:
 
+**See also:** :doc:`Detailed Design (DDD) <ddd>`
+
 Summary
 -------
 
@@ -157,4 +159,13 @@ Limitations and Future Work
 - :need:`SCORE_feat_req__kvs__maximum_size` *(currently unsupported)*
 
 
+
+Detailed Design
+----------------
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Detailed Design
+
+   ddd
 

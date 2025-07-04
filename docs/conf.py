@@ -20,6 +20,10 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
+import os
+print("CWD during Sphinx build:", os.getcwd())
+print("Exists? ../src/rust/rust_kvs:", os.path.exists("../src/rust/rust_kvs"))
+
 project = "Persistency Project"
 author = "S-CORE"
 version = "0.1"
@@ -37,6 +41,7 @@ extensions = [
     "score_draw_uml_funcs",
     "score_source_code_linker",
     "score_layout",
+    "sphinxcontrib_rust",
 ]
 
 exclude_patterns = [
@@ -52,3 +57,12 @@ templates_path = ["templates"]
 
 # Enable numref
 numfig = True
+
+rust_crates = {
+    # 'rust_kvs' is a label you choose for your crate. 
+    # The path is RELATIVE TO THE docs/ directory.
+    "rust_kvs": "src/rust/rust_kvs",
+}
+
+rust_doc_dir = "docs/crates/"
+rust_rustdoc_fmt = "rst"  # (or "md" if you want markdown)

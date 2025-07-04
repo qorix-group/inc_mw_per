@@ -26,6 +26,9 @@ python.toolchain(
 )
 use_repo(python)
 
+# Provides, pytest & venv
+bazel_dep(name = "score_python_basics", version = "0.3.2")
+
 # Add GoogleTest dependency
 bazel_dep(name = "googletest", version = "1.14.0")
 
@@ -61,6 +64,17 @@ bazel_dep(name = "buildifier_prebuilt", version = "7.3.1")
 
 #docs-as-code
 bazel_dep(name = "score_docs_as_code", version = "0.3.3")
+
+#local_path_override(
+#    module_name = "score_docs_as_code",
+#    path = "/home/dcalavrezo/sources/docs-as-code",
+#)
+
+git_override(
+    module_name = "score_docs_as_code",
+    remote = "git@github.com:qorix-group/docs-as-code",
+    commit = "5ceb424fe51d785bfdd438a0649dc2b8a6d22faa",
+)
 
 # Module deps
 
