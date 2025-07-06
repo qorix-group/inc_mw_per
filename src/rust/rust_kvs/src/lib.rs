@@ -55,13 +55,11 @@
 //!
 //! ## Example Usage
 //!
-//! ```
-//! use rust_kvs::{ErrorCode, InstanceId,Kvs,KvsApi, KvsBuilder, KvsValue};
+//! ```rust
+//! use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue};
 //! use std::collections::HashMap;
 //!
 //! fn main() -> Result<(), ErrorCode> {
-//!    
-//!     
 //!     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0)).dir("").build()?;
 //!
 //!     kvs.set_value("number", 123.0)?;
@@ -79,12 +77,12 @@
 //!     kvs.set_value(
 //!         "object",
 //!         HashMap::from([
-//!             (String::from("sub-number"), KvsValue::from(789.0)),
-//!             ("sub-bool".into(), true.into()),
-//!             ("sub-string".into(), "Third".to_string().into()),
-//!             ("sub-null".into(), ().into()),
+//!             ("sub-number".to_string(), KvsValue::from(789.0)),
+//!             ("sub-bool".to_string(), true.into()),
+//!             ("sub-string".to_string(), "Third".to_string().into()),
+//!             ("sub-null".to_string(), ().into()),
 //!             (
-//!                 "sub-array".into(),
+//!                 "sub-array".to_string(),
 //!                 KvsValue::from(vec![
 //!                     KvsValue::from(1246.0),
 //!                     false.into(),
@@ -133,7 +131,6 @@
 //!   * Feature `FEAT_REQ__KVS__supported_datatypes_values` is matched by using the same types that
 //!     the IPC will use for the Rust implementation.
 #![forbid(unsafe_code)]
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 extern crate alloc;
 
@@ -141,7 +138,6 @@ extern crate alloc;
 use alloc::string::FromUtf8Error;
 use core::array::TryFromSliceError;
 use core::fmt;
-use core::ops::Index;
 
 //std libs
 use std::collections::HashMap;
@@ -154,7 +150,12 @@ use std::sync::{
 
 //external libs
 use adler32::RollingAdler32;
-use tinyjson::{JsonGenerateError, JsonGenerator, JsonParseError, JsonValue};
+pub use crate::json_value::{KvsJson, TinyJson, KvsJsonError};
+pub use crate::json_value::JsonValue;
+
+
+pub mod json_value;
+pub mod ser_des;
 
 /// Maximum number of snapshots
 ///
@@ -269,8 +270,16 @@ pub struct Kvs {
 /// Key-value-storage value
 #[derive(Clone, Debug)]
 pub enum KvsValue {
-    /// Number
-    Number(f64),
+    /// 32-bit signed integer
+    I32(i32),
+    /// 32-bit unsigned integer
+    U32(u32),
+    /// 64-bit signed integer
+    I64(i64),
+    /// 64-bit unsigned integer
+    U64(u64),
+    /// 64-bit float
+    F64(f64),
 
     /// Boolean
     Boolean(bool),
@@ -286,6 +295,63 @@ pub enum KvsValue {
 
     /// Object
     Object(HashMap<String, KvsValue>),
+}
+
+// Ergonomic From<T> for KvsValue impls for all basic types and collections
+impl From<f64> for KvsValue {
+    fn from(val: f64) -> Self {
+        KvsValue::F64(val)
+    }
+}
+impl From<i32> for KvsValue {
+    fn from(val: i32) -> Self {
+        KvsValue::I32(val)
+    }
+}
+impl From<u32> for KvsValue {
+    fn from(val: u32) -> Self {
+        KvsValue::U32(val)
+    }
+}
+impl From<i64> for KvsValue {
+    fn from(val: i64) -> Self {
+        KvsValue::I64(val)
+    }
+}
+impl From<u64> for KvsValue {
+    fn from(val: u64) -> Self {
+        KvsValue::U64(val)
+    }
+}
+impl From<bool> for KvsValue {
+    fn from(val: bool) -> Self {
+        KvsValue::Boolean(val)
+    }
+}
+impl From<String> for KvsValue {
+    fn from(val: String) -> Self {
+        KvsValue::String(val)
+    }
+}
+impl From<&str> for KvsValue {
+    fn from(val: &str) -> Self {
+        KvsValue::String(val.to_string())
+    }
+}
+impl From<()> for KvsValue {
+    fn from(_: ()) -> Self {
+        KvsValue::Null
+    }
+}
+impl From<Vec<KvsValue>> for KvsValue {
+    fn from(val: Vec<KvsValue>) -> Self {
+        KvsValue::Array(val)
+    }
+}
+impl From<std::collections::HashMap<String, KvsValue>> for KvsValue {
+    fn from(val: std::collections::HashMap<String, KvsValue>) -> Self {
+        KvsValue::Object(val)
+    }
 }
 
 /// Need-Defaults flag
@@ -377,21 +443,10 @@ impl From<std::io::Error> for ErrorCode {
     }
 }
 
-impl From<JsonParseError> for ErrorCode {
-    fn from(cause: JsonParseError) -> Self {
-        eprintln!(
-            "error: JSON parser error: line = {}, column = {}",
-            cause.line(),
-            cause.column()
-        );
+impl From<KvsJsonError> for ErrorCode {
+    fn from(cause: KvsJsonError) -> Self {
+        eprintln!("error: JSON operation error: {cause:#?}");
         ErrorCode::JsonParserError
-    }
-}
-
-impl From<JsonGenerateError> for ErrorCode {
-    fn from(cause: JsonGenerateError) -> Self {
-        eprintln!("error: JSON generator error: msg = {}", cause.message());
-        ErrorCode::JsonGeneratorError
     }
 }
 
@@ -483,6 +538,11 @@ pub trait KvsApi {
     fn snapshot_restore(&self, id: SnapshotId) -> Result<(), ErrorCode>;
     fn get_kvs_filename(&self, id: SnapshotId) -> String;
     fn get_hash_filename(&self, id: SnapshotId) -> String;
+
+    /// Get the assigned value for a given key using TryFromKvsValue
+    fn get_value_kvs<T>(&self, key: &str) -> Result<T, ErrorCode>
+    where
+        T: TryFromKvsValue + Clone;
 }
 
 impl<T> KvsBuilder<T>
@@ -613,14 +673,14 @@ impl Kvs {
                                 Err(ErrorCode::ValidationFailed)
                             } else {
                                 println!("JSON data has valid hash");
-                                let data: JsonValue = data.parse()?;
-                                println!("parsing file {filename_json}");
-                                Ok(data
-                                    .get::<HashMap<_, _>>()
-                                    .ok_or(ErrorCode::JsonParserError)?
-                                    .iter()
-                                    .map(|(key, value)| (key.clone(), value.into()))
-                                    .collect())
+                                let json_val = TinyJson::parse(&data)?;
+                                let kvs_val = KvsValue::from(&json_val);
+                                if let KvsValue::Object(map) = kvs_val {
+                                    println!("parsing file {filename_json}");
+                                    Ok(map)
+                                } else {
+                                    Err(ErrorCode::JsonParserError)
+                                }
                             }
                         }
                         Err(err) => {
@@ -631,13 +691,13 @@ impl Kvs {
                         }
                     }
                 } else {
-                    Ok(data
-                        .parse::<JsonValue>()?
-                        .get::<HashMap<_, _>>()
-                        .ok_or(ErrorCode::JsonParserError)?
-                        .iter()
-                        .map(|(key, value)| (key.clone(), value.into()))
-                        .collect())
+                    let json_val = TinyJson::parse(&data)?;
+                    let kvs_val = KvsValue::from(&json_val);
+                    if let KvsValue::Object(map) = kvs_val {
+                        Ok(map)
+                    } else {
+                        Err(ErrorCode::JsonParserError)
+                    }
                 }
             }
             Err(err) => {
@@ -766,6 +826,20 @@ impl KvsApi for Kvs {
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> {
         Ok(self.kvs.lock()?.keys().map(|x| x.to_string()).collect())
+    }
+
+    /// Get the assigned value for a given key using TryFromKvsValue
+    fn get_value_kvs<T>(&self, key: &str) -> Result<T, ErrorCode>
+    where
+        T: TryFromKvsValue + Clone {
+        let kvs = self.kvs.lock()?;
+        if let Some(value) = kvs.get(key) {
+            T::try_from_kvs_value(value)
+        } else if let Some(value) = self.default.get(key) {
+            T::try_from_kvs_value(value)
+        } else {
+            Err(ErrorCode::KeyNotFound)
+        }
     }
 
     /// Check if a key exists
@@ -924,24 +998,21 @@ impl KvsApi for Kvs {
     ///   * `ErrorCode::ConversionFailed`: JSON could not serialize into String
     ///   * `ErrorCode::UnmappedError`: Unmapped error
     fn flush(&self) -> Result<(), ErrorCode> {
-        let json: HashMap<String, JsonValue> = self
+        let map: HashMap<String, KvsValue> = self
             .kvs
-            .lock()?
-            .iter()
-            .map(|(key, value)| (key.clone(), value.into()))
-            .collect();
-        let json = JsonValue::from(json);
-        let mut buf = Vec::new();
-        let mut gen = JsonGenerator::new(&mut buf).indent("  ");
-        gen.generate(&json)?;
+            .lock()? 
+            .clone();
+        let kvs_val = KvsValue::Object(map);
+        let json_val = JsonValue::from(&kvs_val);
+        let json_str = TinyJson::stringify(&json_val)?;
+        let buf = json_str.as_bytes();
 
         self.snapshot_rotate()?;
 
-        let hash = RollingAdler32::from_buffer(&buf).hash();
+        let hash = RollingAdler32::from_buffer(buf).hash();
 
         let filename_json = format!("{}_0.json", self.filename_prefix);
-        let data = String::from_utf8(buf)?;
-        fs::write(filename_json, &data)?;
+        fs::write(&filename_json, buf)?;
 
         let filename_hash = format!("{}_0.hash", self.filename_prefix);
         fs::write(filename_hash, hash.to_be_bytes()).ok();
@@ -1051,134 +1122,9 @@ impl Drop for Kvs {
     }
 }
 
-impl From<&JsonValue> for KvsValue {
-    fn from(val: &JsonValue) -> KvsValue {
-        match val {
-            JsonValue::Number(val) => KvsValue::Number(*val),
-            JsonValue::Boolean(val) => KvsValue::Boolean(*val),
-            JsonValue::String(val) => KvsValue::String(val.clone()),
-            JsonValue::Null => KvsValue::Null,
-            JsonValue::Array(val) => KvsValue::Array(val.iter().map(|x| x.into()).collect()),
-            JsonValue::Object(val) => {
-                KvsValue::Object(val.iter().map(|(x, y)| (x.clone(), y.into())).collect())
-            }
-        }
-    }
-}
-
-impl From<&KvsValue> for JsonValue {
-    fn from(val: &KvsValue) -> JsonValue {
-        match val {
-            KvsValue::Number(val) => JsonValue::Number(*val),
-            KvsValue::Boolean(val) => JsonValue::Boolean(*val),
-            KvsValue::String(val) => JsonValue::String(val.clone()),
-            KvsValue::Null => JsonValue::Null,
-            KvsValue::Array(val) => JsonValue::Array(val.iter().map(|x| x.into()).collect()),
-            KvsValue::Object(val) => {
-                JsonValue::Object(val.iter().map(|(x, y)| (x.clone(), y.into())).collect())
-            }
-        }
-    }
-}
-
-macro_rules! impl_from_t_for_kvs_value {
-    ($from:ty, $item:ident) => {
-        impl From<$from> for KvsValue {
-            fn from(val: $from) -> KvsValue {
-                KvsValue::$item(val)
-            }
-        }
-    };
-}
-
-impl_from_t_for_kvs_value!(f64, Number);
-impl_from_t_for_kvs_value!(bool, Boolean);
-impl_from_t_for_kvs_value!(String, String);
-impl_from_t_for_kvs_value!(Vec<KvsValue>, Array);
-impl_from_t_for_kvs_value!(HashMap<String, KvsValue>, Object);
-
-impl From<()> for KvsValue {
-    fn from(_data: ()) -> KvsValue {
-        KvsValue::Null
-    }
-}
-
-macro_rules! impl_from_kvs_value_to_t {
-    ($to:ty, $item:ident) => {
-        impl<'a> From<&'a KvsValue> for $to {
-            fn from(val: &'a KvsValue) -> $to {
-                if let KvsValue::$item(val) = val {
-                    return val.clone();
-                }
-
-                panic!("Invalid KvsValue type");
-            }
-        }
-    };
-}
-
-impl_from_kvs_value_to_t!(f64, Number);
-impl_from_kvs_value_to_t!(bool, Boolean);
-impl_from_kvs_value_to_t!(String, String);
-impl_from_kvs_value_to_t!(Vec<KvsValue>, Array);
-impl_from_kvs_value_to_t!(HashMap<String, KvsValue>, Object);
-
-impl<'a> From<&'a KvsValue> for () {
-    fn from(val: &'a KvsValue) {
-        if let KvsValue::Null = val {
-            return;
-        }
-
-        panic!("Invalid KvsValue type for ()");
-    }
-}
-
-// Note: The following logic was copied and adapted from TinyJSON.
-
-pub trait KvsValueGet {
-    fn get_inner_value(val: &KvsValue) -> Option<&Self>;
-}
-
-impl KvsValue {
-    pub fn get<T: KvsValueGet>(&self) -> Option<&T> {
-        T::get_inner_value(self)
-    }
-}
-
-macro_rules! impl_kvs_get_inner_value {
-    ($to:ty, $pat:pat => $val:expr) => {
-        impl KvsValueGet for $to {
-            fn get_inner_value(v: &KvsValue) -> Option<&$to> {
-                use KvsValue::*;
-                match v {
-                    $pat => Some($val),
-                    _ => None,
-                }
-            }
-        }
-    };
-}
-
-impl_kvs_get_inner_value!(f64, Number(n) => n);
-impl_kvs_get_inner_value!(bool, Boolean(b) => b);
-impl_kvs_get_inner_value!(String, String(s) => s);
-impl_kvs_get_inner_value!((), Null => &());
-impl_kvs_get_inner_value!(Vec<KvsValue>, Array(a) => a);
-impl_kvs_get_inner_value!(HashMap<String, KvsValue>, Object(h) => h);
-
-impl Index<usize> for KvsValue {
-    type Output = KvsValue;
-
-    fn index(&self, index: usize) -> &'_ Self::Output {
-        let array = match self {
-            KvsValue::Array(a) => a,
-            _ => panic!(
-                "Attempted to access to an array with index {index} but actually the value was {self:?}",
-            ),
-        };
-        &array[index]
-    }
-}
+// Re-import TryFromKvsValue and KvsValueGet traits if they were moved
+// Use only the re-exports from json_value.rs for JSON and conversion traits
+pub use crate::json_value::{TryFromKvsValue, KvsValueGet};
 
 #[cfg(test)]
 mod tests {
@@ -1273,17 +1219,16 @@ mod tests {
 
     #[test]
     fn test_unknown_error_code_from_json_parse_error() {
-        let error = tinyjson::JsonParser::new("[1, 2, 3".chars())
-            .parse()
-            .unwrap_err();
+        // Simulate a JSON parse error using the KvsJsonError abstraction
+        let error = KvsJsonError("test parse error".to_string());
         assert_eq!(ErrorCode::from(error), ErrorCode::JsonParserError);
     }
 
     #[test]
     fn test_unknown_error_code_from_json_generate_error() {
-        let data: JsonValue = JsonValue::Number(f64::INFINITY);
-        let error = data.stringify().unwrap_err();
-        assert_eq!(ErrorCode::from(error), ErrorCode::JsonGeneratorError);
+        // Simulate a JSON generate error using the KvsJsonError abstraction
+        let error = KvsJsonError("test generate error".to_string());
+        assert_eq!(ErrorCode::from(error), ErrorCode::JsonParserError);
     }
 
     #[test]
@@ -1343,7 +1288,7 @@ mod tests {
             .dir(temp_dir.1.clone())
             .build()
             .unwrap();
-        let _ = kvs.set_value("test", KvsValue::Number(1.0));
+        let _ = kvs.set_value("test", KvsValue::F64(1.0));
         let result = kvs.reset();
         assert!(result.is_ok(), "Expected Ok for reset");
     }
@@ -1356,7 +1301,7 @@ mod tests {
             .dir(temp_dir.1.clone())
             .build()
             .unwrap();
-        let _ = kvs.set_value("test", KvsValue::Number(1.0));
+        let _ = kvs.set_value("test", KvsValue::F64(1.0));
         let keys = kvs.get_all_keys();
         assert!(keys.is_ok(), "Expected Ok for get_all_keys");
         let keys = keys.unwrap();
@@ -1377,7 +1322,7 @@ mod tests {
         let exists = kvs.key_exists("test");
         assert!(exists.is_ok(), "Expected Ok for key_exists");
         assert!(!exists.unwrap(), "Expected 'test' key to not exist");
-        let _ = kvs.set_value("test", KvsValue::Number(1.0));
+        let _ = kvs.set_value("test", KvsValue::F64(1.0));
         let exists = kvs.key_exists("test");
         assert!(exists.is_ok(), "Expected Ok for key_exists after set");
         assert!(exists.unwrap(), "Expected 'test' key to exist after set");
@@ -1408,8 +1353,8 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        let _ = kvs.set_value("test", KvsValue::Number(123.0));
-        let value = kvs.get_value::<f64>("test");
+        let _ = kvs.set_value("test", KvsValue::F64(123.0));
+        let value = (*kvs).get_value_kvs::<f64>("test");
         assert_eq!(
             value.unwrap(),
             123.0,
@@ -1419,7 +1364,7 @@ mod tests {
 
     #[test]
     fn test_get_inner_value() {
-        let value = KvsValue::Number(42.0);
+        let value = KvsValue::F64(42.0);
         let inner = f64::get_inner_value(&value);
         assert_eq!(inner, Some(&42.0), "Expected to get inner f64 value");
     }
@@ -1457,7 +1402,7 @@ mod tests {
         let temp_dir = test_dir();
 
         std::fs::copy(
-            "tests/kvs_0_default.json",
+            "tes/kvs_0_default.json",
             format!("{}/kvs_0_default.json", temp_dir.1.clone()),
         )
         .unwrap();
@@ -1470,7 +1415,7 @@ mod tests {
                 .unwrap(),
         );
 
-        let _ = kvs.set_value("test", KvsValue::Number(123.0f64));
+        let _ = kvs.set_value("test", KvsValue::F64(123.0f64));
 
         // stored value: should return ConversionFailed
         let result = kvs.get_value::<u64>("test");
@@ -1499,7 +1444,7 @@ mod tests {
         )
         .unwrap();
         let _ = kvs.set_value("direct", KvsValue::String("abc".to_string()));
-        let value = kvs.get_value::<String>("direct");
+        let value = kvs.get_value_kvs::<String>("direct");
         assert_eq!(value.unwrap(), "abc");
     }
 
@@ -1514,11 +1459,11 @@ mod tests {
             Some(temp_dir.1.clone()),
         )
         .unwrap();
-        let _ = kvs.set_value("reset", KvsValue::Number(1.0));
-        assert!(kvs.get_value::<f64>("reset").is_ok());
+        let _ = kvs.set_value("reset", KvsValue::F64(1.0));
+        assert!(kvs.get_value_kvs::<f64>("reset").is_ok());
         kvs.reset().unwrap();
         assert!(matches!(
-            kvs.get_value::<f64>("reset"),
+            kvs.get_value_kvs::<f64>("reset"),
             Err(ErrorCode::KeyNotFound)
         ));
     }
@@ -1552,7 +1497,7 @@ mod tests {
             Some(temp_dir.1.clone()),
         )
         .unwrap();
-        let _ = kvs.set_value("bar", KvsValue::Number(2.0));
+        let _ = kvs.set_value("bar", KvsValue::F64(2.0));
         assert!(kvs.key_exists("bar").unwrap());
         kvs.remove_key("bar").unwrap();
         assert!(!kvs.key_exists("bar").unwrap());
@@ -1569,7 +1514,7 @@ mod tests {
             Some(temp_dir.1.clone()),
         )
         .unwrap();
-        let _ = kvs.set_value("snap", KvsValue::Number(3.0));
+        let _ = kvs.set_value("snap", KvsValue::F64(3.0));
         kvs.flush().unwrap();
         // After flush, snapshot count should be 0 (no old snapshots yet)
         assert_eq!(kvs.snapshot_count(), 0);
