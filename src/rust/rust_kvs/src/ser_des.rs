@@ -1,6 +1,6 @@
 //! Serialization and deserialization logic for KvsValue <-> JsonValue
 
-use crate::KvsValue;
+use crate::kvs_value::KvsValue;
 use crate::json_value::JsonValue;
 use std::collections::HashMap;
 
