@@ -103,6 +103,13 @@ impl_tryfrom_kvsvalue!(String, String);
 impl_tryfrom_kvsvalue!(Vec<KvsValue>, Array);
 impl_tryfrom_kvsvalue!(HashMap<String, KvsValue>, Object);
 
+// Allow retrieving the raw KvsValue via TryFromKvsValue
+impl TryFromKvsValue for KvsValue {
+    fn try_from_kvs_value(val: &KvsValue) -> Result<Self, crate::error_code::ErrorCode> {
+        Ok(val.clone())
+    }
+}
+
 impl TryFromKvsValue for () {
     fn try_from_kvs_value(val: &KvsValue) -> Result<(), ErrorCode> {
         if let KvsValue::Null = val {
@@ -134,3 +141,24 @@ impl_kvs_get_inner_value!(i32, I32);
 impl_kvs_get_inner_value!(u32, U32);
 impl_kvs_get_inner_value!(i64, I64);
 impl_kvs_get_inner_value!(u64, U64);
+
+// Bridge TryFrom<&KvsValue> for all supported types to TryFromKvsValue
+macro_rules! impl_std_tryfrom_kvsvalue {
+    ($t:ty) => {
+        impl<'a> TryFrom<&'a crate::kvs_value::KvsValue> for $t {
+            type Error = crate::error_code::ErrorCode;
+            fn try_from(value: &'a crate::kvs_value::KvsValue) -> Result<Self, Self::Error> {
+                <$t as crate::json_value::TryFromKvsValue>::try_from_kvs_value(value)
+            }
+        }
+    };
+}
+impl_std_tryfrom_kvsvalue!(f64);
+impl_std_tryfrom_kvsvalue!(i32);
+impl_std_tryfrom_kvsvalue!(u32);
+impl_std_tryfrom_kvsvalue!(i64);
+impl_std_tryfrom_kvsvalue!(u64);
+impl_std_tryfrom_kvsvalue!(bool);
+impl_std_tryfrom_kvsvalue!(String);
+impl_std_tryfrom_kvsvalue!(Vec<crate::kvs_value::KvsValue>);
+impl_std_tryfrom_kvsvalue!(std::collections::HashMap<String, crate::kvs_value::KvsValue>);

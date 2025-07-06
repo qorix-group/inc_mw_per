@@ -738,7 +738,6 @@ mod tests {
     use crate::kvs_value::KvsValue;
     use crate::json_value::KvsJson;
     use crate::json_value::KvsJsonError;
-    use core::convert::TryFrom;
 
     // Mock JSON backend
     struct MockJson;
@@ -758,20 +757,6 @@ mod tests {
 
     impl Default for MockJson {
         fn default() -> Self { MockJson }
-    }
-
-    // Implement TryFrom<&KvsValue> for i32 for test context
-    impl<'a> TryFrom<&'a KvsValue> for i32 {
-        type Error = crate::error_code::ErrorCode;
-        fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
-            match value {
-                KvsValue::I32(i) => Ok(*i),
-                KvsValue::U32(u) => Ok(*u as i32),
-                KvsValue::F64(f) => Ok(*f as i32),
-                KvsValue::String(s) => s.parse::<i32>().map_err(|_| crate::error_code::ErrorCode::ConversionFailed),
-                _ => Err(crate::error_code::ErrorCode::ConversionFailed),
-            }
-        }
     }
 
     type TestKvs = Kvs<MockJson>;
