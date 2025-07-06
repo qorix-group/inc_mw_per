@@ -50,7 +50,8 @@ impl std::fmt::Display for KvsJsonError {
 impl std::error::Error for KvsJsonError {}
 
 // Conversion between KvsValue and JsonValue
-use crate::KvsValue;
+use crate::kvs_value::KvsValue;
+use crate::error_code::ErrorCode;
 
 
 pub trait KvsJson {
@@ -67,17 +68,17 @@ pub trait KvsJson {
 
 // Custom trait for conversion from &KvsValue
 pub trait TryFromKvsValue: Sized {
-    fn try_from_kvs_value(val: &KvsValue) -> Result<Self, crate::ErrorCode>;
+    fn try_from_kvs_value(val: &KvsValue) -> Result<Self, ErrorCode>;
 }
 
 macro_rules! impl_tryfrom_kvsvalue {
     ($t:ty, $variant:ident) => {
         impl TryFromKvsValue for $t {
-            fn try_from_kvs_value(val: &KvsValue) -> Result<$t, crate::ErrorCode> {
+            fn try_from_kvs_value(val: &KvsValue) -> Result<$t, ErrorCode> {
                 if let KvsValue::$variant(inner) = val {
                     Ok(inner.clone())
                 } else {
-                    Err(crate::ErrorCode::ConversionFailed)
+                    Err(ErrorCode::ConversionFailed)
                 }
             }
         }
@@ -94,11 +95,11 @@ impl_tryfrom_kvsvalue!(Vec<KvsValue>, Array);
 impl_tryfrom_kvsvalue!(HashMap<String, KvsValue>, Object);
 
 impl TryFromKvsValue for () {
-    fn try_from_kvs_value(val: &KvsValue) -> Result<(), crate::ErrorCode> {
+    fn try_from_kvs_value(val: &KvsValue) -> Result<(), ErrorCode> {
         if let KvsValue::Null = val {
             Ok(())
         } else {
-            Err(crate::ErrorCode::ConversionFailed)
+            Err(ErrorCode::ConversionFailed)
         }
     }
 }
