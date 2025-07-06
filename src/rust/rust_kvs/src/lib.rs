@@ -56,42 +56,52 @@
 //! ## Example Usage
 //!
 //! ```rust
-//! use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue};
+//! use rust_kvs::{kvs, kvs_api::KvsApi, kvs_builder::KvsBuilder, kvs_value::KvsValue, kvs::InstanceId, error_code::ErrorCode};
 //! use std::collections::HashMap;
 //!
 //! fn main() -> Result<(), ErrorCode> {
-//!     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0)).dir("").build()?;
+//!     // Ensure the storage directory exists
+//!     std::fs::create_dir_all("./kvs_data").expect("Failed to create kvs_data directory");
+//!
+//!     let kvs = KvsBuilder::<kvs::Kvs>::new(InstanceId::new(0))
+//!         .dir("./kvs_data")
+//!         .build()?;
 //!
 //!     kvs.set_value("number", 123.0)?;
 //!     kvs.set_value("bool", true)?;
-//!     kvs.set_value("string", "First".to_string())?;
+//!     kvs.set_value("string", "First")?;
 //!     kvs.set_value("null", ())?;
 //!     kvs.set_value(
 //!         "array",
-//!         vec![
-//!             KvsValue::from(456.0),
-//!             false.into(),
-//!             "Second".to_string().into(),
-//!         ],
+//!         vec![KvsValue::from(456.0), false.into(), "Second".into()],
 //!     )?;
 //!     kvs.set_value(
 //!         "object",
 //!         HashMap::from([
 //!             ("sub-number".to_string(), KvsValue::from(789.0)),
 //!             ("sub-bool".to_string(), true.into()),
-//!             ("sub-string".to_string(), "Third".to_string().into()),
+//!             ("sub-string".to_string(), "Third".into()),
 //!             ("sub-null".to_string(), ().into()),
 //!             (
 //!                 "sub-array".to_string(),
-//!                 KvsValue::from(vec![
-//!                     KvsValue::from(1246.0),
-//!                     false.into(),
-//!                     "Fourth".to_string().into(),
-//!                 ]),
+//!                 KvsValue::from(vec![KvsValue::from(1246.0), false.into(), "Fourth".into()]),
 //!             ),
 //!         ]),
 //!     )?;
 //!
+//!     // Retrieve a value as f64
+//!     let number: f64 = kvs.get_value("number")?;
+//!     // Retrieve a value as bool
+//!     let b: bool = kvs.get_value("bool")?;
+//!     // Retrieve a value as String
+//!     let s: String = kvs.get_value("string")?;
+//!     // Retrieve a value as Vec<KvsValue>
+//!     let arr: Vec<KvsValue> = kvs.get_value("array")?;
+//!     // Retrieve a value as HashMap<String, KvsValue>
+//!     let obj: HashMap<String, KvsValue> = kvs.get_value("object")?;
+//!
+//!     // Clean up
+//!     std::fs::remove_dir_all("./kvs_data").ok();
 //!     Ok(())
 //! }
 //! ```
