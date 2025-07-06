@@ -37,7 +37,7 @@ use crate::error_code::ErrorCode;
 
 //json dependencies
 use crate::json_value::{KvsJson, TinyJson, KvsJsonError};
-use crate::json_value::{JsonValue,TryFromKvsValue};
+use crate::json_value::TryFromKvsValue;
 
 
 /// Maximum number of snapshots
@@ -91,7 +91,7 @@ enum OpenJsonVerifyHash {
 }
 
 /// Key-value-storage data
-pub struct Kvs {
+pub struct Kvs<J: KvsJson + Default = TinyJson> {
     /// Storage data
     ///
     /// Feature: `FEAT_REQ__KVS__thread_safety` (Mutex)
@@ -107,6 +107,8 @@ pub struct Kvs {
 
     /// Flush on exit flag
     flush_on_exit: AtomicBool,
+    /// Marker for generic JSON backend
+    _json_backend: std::marker::PhantomData<J>,
 }
 
 
@@ -227,7 +229,7 @@ impl From<PoisonError<MutexGuard<'_, HashMap<std::string::String, KvsValue>>>> f
 }
 
 
-impl Kvs {
+impl<J: KvsJson + Default> Kvs<J> {
     /// Open and parse a JSON file
     ///
     /// Return an empty hash when no file was found.
@@ -270,8 +272,8 @@ impl Kvs {
                                 Err(ErrorCode::ValidationFailed)
                             } else {
                                 println!("JSON data has valid hash");
-                                let json_val = TinyJson::parse(&data)?;
-                                let kvs_val = KvsValue::from(&json_val);
+                                let json_val = J::parse(&data)?;
+                                let kvs_val = J::to_kvs_value(json_val);
                                 if let KvsValue::Object(map) = kvs_val {
                                     println!("parsing file {filename_json}");
                                     Ok(map)
@@ -288,8 +290,8 @@ impl Kvs {
                         }
                     }
                 } else {
-                    let json_val = TinyJson::parse(&data)?;
-                    let kvs_val = KvsValue::from(&json_val);
+                    let json_val = J::parse(&data)?;
+                    let kvs_val = J::to_kvs_value(json_val);
                     if let KvsValue::Object(map) = kvs_val {
                         Ok(map)
                     } else {
@@ -345,7 +347,7 @@ impl Kvs {
     }
 }
 
-impl KvsApi for Kvs {
+impl<J: KvsJson + Default> KvsApi for Kvs<J> {
     /// Open the key-value-storage
     ///
     /// Checks and opens a key-value-storage. Flush on exit is enabled by default and can be
@@ -373,7 +375,7 @@ impl KvsApi for Kvs {
         need_defaults: OpenNeedDefaults,
         need_kvs: OpenNeedKvs,
         dir: Option<String>,
-    ) -> Result<Kvs, ErrorCode> {
+    ) -> Result<Kvs<J>, ErrorCode> {
         let dir = if let Some(dir) = dir {
             format!("{dir}/")
         } else {
@@ -383,17 +385,18 @@ impl KvsApi for Kvs {
         let filename_prefix = format!("{dir}kvs_{instance_id}");
         let filename_kvs = format!("{filename_prefix}_0");
 
-        let default = Self::open_json(&filename_default, need_defaults, OpenJsonVerifyHash::No)?;
-        let kvs = Self::open_json(&filename_kvs, need_kvs, OpenJsonVerifyHash::Yes)?;
+        let default = Kvs::<J>::open_json(&filename_default, need_defaults, OpenJsonVerifyHash::No)?;
+        let kvs = Kvs::<J>::open_json(&filename_kvs, need_kvs, OpenJsonVerifyHash::Yes)?;
 
         println!("opened KVS: instance '{instance_id}'");
         println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
 
-        Ok(Self {
+        Ok(Kvs {
             kvs: Mutex::new(kvs),
             default,
             filename_prefix,
             flush_on_exit: AtomicBool::new(true),
+            _json_backend: std::marker::PhantomData,
         })
     }
 
@@ -555,10 +558,10 @@ impl KvsApi for Kvs {
     /// # Return Values
     ///   * Ok: Value was assigned to key
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
-    fn set_value<S: Into<String>, J: Into<KvsValue>>(
+    fn set_value<S: Into<String>, V: Into<KvsValue>>(
         &self,
         key: S,
-        value: J,
+        value: V,
     ) -> Result<(), ErrorCode> {
         self.kvs.lock()?.insert(key.into(), value.into());
         Ok(())
@@ -600,8 +603,8 @@ impl KvsApi for Kvs {
             .lock()? 
             .clone();
         let kvs_val = KvsValue::Object(map);
-        let json_val = JsonValue::from(&kvs_val);
-        let json_str = TinyJson::stringify(&json_val)?;
+        let backend_json_val = J::from_kvs_value(&kvs_val);
+        let json_str = J::stringify(&backend_json_val)?;
         let buf = json_str.as_bytes();
 
         self.snapshot_rotate()?;
@@ -711,10 +714,117 @@ impl KvsApi for Kvs {
     }
 }
 
-impl Drop for Kvs {
+impl<J: KvsJson + Default> Drop for Kvs<J> {
     fn drop(&mut self) {
         if self.flush_on_exit.load(atomic::Ordering::Relaxed) {
             self.flush().ok();
         }
+    }
+}
+
+// Implement Default for TinyJson so it can be used as the default backend
+impl Default for TinyJson {
+    fn default() -> Self {
+        TinyJson {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::atomic::AtomicBool;
+    use std::marker::PhantomData;
+    use crate::kvs_value::KvsValue;
+    use crate::json_value::KvsJson;
+    use crate::json_value::KvsJsonError;
+    use core::convert::TryFrom;
+
+    // Mock JSON backend
+    struct MockJson;
+    impl KvsJson for MockJson {
+        type Value = String;
+        fn parse(s: &str) -> Result<Self::Value, KvsJsonError> { Ok(s.to_string()) }
+        fn stringify(val: &Self::Value) -> Result<String, KvsJsonError> { Ok(val.clone()) }
+        fn get_object(_val: &Self::Value) -> Option<&HashMap<String, Self::Value>> { None }
+        fn get_array(_val: &Self::Value) -> Option<&Vec<Self::Value>> { None }
+        fn get_f64(_val: &Self::Value) -> Option<f64> { None }
+        fn get_bool(_val: &Self::Value) -> Option<bool> { None }
+        fn get_string(val: &Self::Value) -> Option<&str> { Some(val.as_str()) }
+        fn is_null(_val: &Self::Value) -> bool { false }
+        fn to_kvs_value(_val: Self::Value) -> KvsValue { KvsValue::Null }
+        fn from_kvs_value(_val: &KvsValue) -> Self::Value { "mocked".to_string() }
+    }
+
+    impl Default for MockJson {
+        fn default() -> Self { MockJson }
+    }
+
+    // Implement TryFrom<&KvsValue> for i32 for test context
+    impl<'a> TryFrom<&'a KvsValue> for i32 {
+        type Error = crate::error_code::ErrorCode;
+        fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+            match value {
+                KvsValue::I32(i) => Ok(*i),
+                KvsValue::U32(u) => Ok(*u as i32),
+                KvsValue::F64(f) => Ok(*f as i32),
+                KvsValue::String(s) => s.parse::<i32>().map_err(|_| crate::error_code::ErrorCode::ConversionFailed),
+                _ => Err(crate::error_code::ErrorCode::ConversionFailed),
+            }
+        }
+    }
+
+    type TestKvs = Kvs<MockJson>;
+
+    fn new_test_kvs() -> TestKvs {
+        TestKvs {
+            kvs: Mutex::new(HashMap::new()),
+            default: HashMap::new(),
+            filename_prefix: "test".to_string(),
+            flush_on_exit: AtomicBool::new(false),
+            _json_backend: PhantomData,
+        }
+    }
+
+    #[test]
+    fn test_set_and_get_value() {
+        let kvs = new_test_kvs();
+        kvs.set_value("foo", 123).unwrap();
+        let val: i32 = kvs.get_value("foo").unwrap();
+        assert_eq!(val, 123);
+    }
+
+    #[test]
+    fn test_key_exists() {
+        let kvs = new_test_kvs();
+        kvs.set_value("bar", 1).unwrap();
+        assert!(kvs.key_exists("bar").unwrap());
+        assert!(!kvs.key_exists("baz").unwrap());
+    }
+
+    #[test]
+    fn test_remove_key() {
+        let kvs = new_test_kvs();
+        kvs.set_value("x", 1).unwrap();
+        assert!(kvs.remove_key("x").is_ok());
+        assert!(kvs.remove_key("x").is_err());
+    }
+
+    #[test]
+    fn test_get_all_keys() {
+        let kvs = new_test_kvs();
+        kvs.set_value("a", 1).unwrap();
+        kvs.set_value("b", 2).unwrap();
+        let mut keys = kvs.get_all_keys().unwrap();
+        keys.sort();
+        assert_eq!(keys, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn test_reset() {
+        let kvs = new_test_kvs();
+        kvs.set_value("foo", 1).unwrap();
+        kvs.reset().unwrap();
+        assert!(kvs.get_all_keys().unwrap().is_empty());
     }
 }

@@ -36,6 +36,12 @@ impl KvsJson for TinyJson {
     fn is_null(val: &Self::Value) -> bool {
         matches!(val, JsonValue::Null)
     }
+    fn to_kvs_value(val: Self::Value) -> KvsValue {
+        KvsValue::from(&val)
+    }
+    fn from_kvs_value(val: &KvsValue) -> Self::Value {
+        JsonValue::from(val)
+    }
 }
 
 // Error type for trait compatibility
@@ -64,6 +70,9 @@ pub trait KvsJson {
     fn get_bool(val: &Self::Value) -> Option<bool>;
     fn get_string(val: &Self::Value) -> Option<&str>;
     fn is_null(val: &Self::Value) -> bool;
+    fn to_kvs_value(val: Self::Value) -> KvsValue;
+    /// Convert a &KvsValue into the backend's JSON value type
+    fn from_kvs_value(val: &KvsValue) -> Self::Value;
 }
 
 // Custom trait for conversion from &KvsValue

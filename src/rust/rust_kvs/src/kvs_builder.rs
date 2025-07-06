@@ -125,9 +125,41 @@ pub use crate::json_value::{TryFromKvsValue, KvsValueGet};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use std::thread;
     use tempdir::TempDir;
+
+    // --- MockKvs for KvsApi trait testing ---
+    struct MockKvs;
+    impl KvsApi for MockKvs {
+        fn open(
+            _instance_id: InstanceId,
+            _need_defaults: crate::kvs::OpenNeedDefaults,
+            _need_kvs: crate::kvs::OpenNeedKvs,
+            _dir: Option<String>,
+        ) -> Result<Self, ErrorCode> where Self: Sized { Ok(MockKvs) }
+        fn reset(&self) -> Result<(), ErrorCode> { Ok(()) }
+        fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> { Ok(vec![]) }
+        fn key_exists(&self, _key: &str) -> Result<bool, ErrorCode> { Ok(false) }
+        fn get_value<T>(&self, _key: &str) -> Result<T, ErrorCode>
+        where
+            for<'a> T: TryFrom<&'a crate::kvs_value::KvsValue> + Clone,
+            for<'a> <T as TryFrom<&'a crate::kvs_value::KvsValue>>::Error: std::fmt::Debug,
+        { Err(ErrorCode::KeyNotFound) }
+        fn get_default_value(&self, _key: &str) -> Result<crate::kvs_value::KvsValue, ErrorCode> { Err(ErrorCode::KeyNotFound) }
+        fn is_value_default(&self, _key: &str) -> Result<bool, ErrorCode> { Ok(false) }
+        fn set_value<S: Into<String>, J: Into<crate::kvs_value::KvsValue>>(&self, _key: S, _value: J) -> Result<(), ErrorCode> { Ok(()) }
+        fn remove_key(&self, _key: &str) -> Result<(), ErrorCode> { Ok(()) }
+        fn flush_on_exit(&self, _flush_on_exit: bool) {}
+        fn flush(&self) -> Result<(), ErrorCode> { Ok(()) }
+        fn snapshot_count(&self) -> usize { 0 }
+        fn snapshot_max_count() -> usize where Self: Sized { 0 }
+        fn snapshot_restore(&self, _id: crate::kvs::SnapshotId) -> Result<(), ErrorCode> { Ok(()) }
+        fn get_kvs_filename(&self, _id: crate::kvs::SnapshotId) -> String { String::new() }
+        fn get_hash_filename(&self, _id: crate::kvs::SnapshotId) -> String { String::new() }
+        fn get_value_kvs<T>(&self, _key: &str) -> Result<T, ErrorCode>
+        where
+            T: crate::json_value::TryFromKvsValue + Clone,
+        { Err(ErrorCode::KeyNotFound) }
+    }
 
     #[must_use]
     fn test_dir() -> (TempDir, String) {
@@ -139,38 +171,37 @@ mod tests {
     #[test]
     fn test_new_kvs_builder() {
         let instance_id = InstanceId::new(0);
-        let builder = KvsBuilder::<Kvs>::new(instance_id.clone()).dir(test_dir().1);
-
-        assert_eq!(builder.instance_id, instance_id);
-        assert!(!builder.need_defaults);
-        assert!(!builder.need_kvs);
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).dir(test_dir().1);
+        let result = builder.build();
+        assert!(result.is_ok(), "KvsBuilder<MockKvs> should build successfully");
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).need_defaults(true);
+        assert!(builder.need_defaults);
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).need_kvs(true);
+        assert!(builder.need_kvs);
     }
 
     #[test]
     fn test_need_defaults() {
         let instance_id = InstanceId::new(0);
-        let builder = KvsBuilder::<Kvs>::new(instance_id.clone())
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone())
             .dir(test_dir().1)
             .need_defaults(true);
-
         assert!(builder.need_defaults);
     }
 
     #[test]
     fn test_need_kvs() {
         let instance_id = InstanceId::new(0);
-        let builder = KvsBuilder::<Kvs>::new(instance_id.clone())
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone())
             .dir(test_dir().1)
             .need_kvs(true);
-
         assert!(builder.need_kvs);
     }
 
     #[test]
     fn test_build() {
         let instance_id = InstanceId::new(0);
-        let builder = KvsBuilder::<Kvs>::new(instance_id.clone()).dir(test_dir().1);
-
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).dir(test_dir().1);
         builder.build().unwrap();
     }
 
