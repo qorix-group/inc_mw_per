@@ -60,5 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Get value error: {:?}", e))?;
     assert_eq!(my_struct, loaded);
     println!("Loaded struct: {:?}", loaded);
+    // Clean up: remove the directory and all its contents
+    std::fs::remove_dir_all("./kvs_data").expect("Failed to remove kvs_data directory");
     Ok(())
 }

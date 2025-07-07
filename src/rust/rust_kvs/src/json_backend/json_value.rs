@@ -17,7 +17,7 @@ pub struct TinyJson;
 impl KvsJson for TinyJson {
     type Value = JsonValue;
     fn parse(s: &str) -> Result<Self::Value, KvsBackendError> {
-        s.parse().map_err(|e: JsonParseError| KvsBackendError::Json(format!("parse error: {:?}", e)))
+        s.parse().map_err(|e: JsonParseError| KvsBackendError::Json(format!("parse error: {e:?}")))
     }
     fn stringify(val: &Self::Value) -> Result<String, KvsBackendError> {
         val.stringify().map_err(|e: JsonGenerateError| KvsBackendError::Json(format!("stringify: {}", e.message())))

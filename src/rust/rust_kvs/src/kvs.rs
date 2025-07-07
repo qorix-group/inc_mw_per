@@ -18,7 +18,6 @@ use core::array::TryFromSliceError;
 
 
 //std dependencies
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{self, AtomicBool};
@@ -204,7 +203,7 @@ impl From<TryFromSliceError> for ErrorCode {
 
 impl From<Vec<u8>> for ErrorCode {
     fn from(cause: Vec<u8>) -> Self {
-        eprintln!("error: try_into from u8 vector failed: {:#?}", cause);
+        eprintln!("error: try_into from u8 vector failed: {cause:#?}");
         ErrorCode::ConversionFailed
     }
 }
@@ -333,9 +332,9 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
         // If need_kvs is Optional and file does not exist, create it (persist empty map) BEFORE open_kvs
         if let OpenNeedKvs::Optional = need_kvs {
             use std::path::Path;
-            if !Path::new(&format!("{}_0.json", filename_prefix)).exists() {
+            if !Path::new(&format!("{filename_prefix}_0.json")).exists() {
                 // Persist empty map to create the file
-                let _ = J::persist_kvs_to_file(&KvsMap::new(), &format!("{}_0.json", filename_prefix));
+                let _ = J::persist_kvs_to_file(&KvsMap::new(), &format!("{filename_prefix}_0.json"));
             }
         }
         let default = Kvs::<J>::open_kvs(&filename_default, need_defaults, OpenJsonVerifyHash::No, "")?;
@@ -344,14 +343,14 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
             &filename_kvs,
             need_kvs,
             OpenJsonVerifyHash::Yes,
-            &format!("{}_0.hash", filename_prefix),
+            &format!("{filename_prefix}_0.hash"),
         )?;
 
         println!("opened KVS: instance '{instance_id}'");
         println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
 
         Ok(Kvs {
-            kvs: kvs,
+            kvs,
             default,
             filename_prefix,
             flush_on_exit: AtomicBool::new(true),
