@@ -12,17 +12,16 @@
 //! # Verify Snapshot Recovery
 
 use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, SnapshotId};
-use std::env::set_current_dir;
 use tempfile::tempdir;
 
 /// Test snapshot recovery
 #[test]
 fn kvs_snapshot_restore() -> Result<(), ErrorCode> {
     let dir = tempdir()?;
-    set_current_dir(dir.path())?;
+    let dir_path = dir.path().to_path_buf();
 
     let max_count = Kvs::snapshot_max_count();
-    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0), dir_path.clone())
         .need_defaults(false)
         .need_kvs(false)
         .build()?;
@@ -42,7 +41,7 @@ fn kvs_snapshot_restore() -> Result<(), ErrorCode> {
 
         // drop the current instance with flush-on-exit enabled and re-open it
         drop(kvs);
-        kvs = KvsBuilder::new(InstanceId::new(0))
+        kvs = KvsBuilder::new(InstanceId::new(0), dir_path.clone())
             .need_defaults(false)
             .need_kvs(true)
             .build()?;
