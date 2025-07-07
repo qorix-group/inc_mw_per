@@ -63,7 +63,7 @@
 //!     // Ensure the storage directory exists
 //!     std::fs::create_dir_all("./kvs_data").expect("Failed to create kvs_data directory");
 //!
-//!     let kvs = KvsBuilder::<kvs::Kvs>::new(InstanceId::new(0))
+//!     let mut kvs = KvsBuilder::<kvs::Kvs>::new(InstanceId::new(0))
 //!         .dir("./kvs_data")
 //!         .build()?;
 //!

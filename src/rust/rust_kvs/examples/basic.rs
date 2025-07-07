@@ -3,7 +3,7 @@ use rust_kvs::kvs::{InstanceId, Kvs};
 use rust_kvs::kvs_builder::KvsBuilder;
 use rust_kvs::kvs_api::KvsApi;
 
-fn type_mismatch_demo(kvs: &Kvs) {
+fn type_mismatch_demo(kvs: &mut Kvs) {
     // i32 stored, try to get as f64
     kvs.set_value("mismatch_i32", 123_i32).expect("Failed to set i32");
     match kvs.get_value::<f64>("mismatch_i32") {
@@ -75,7 +75,7 @@ fn main() {
 
     // Create a new KVS instance with instance ID 1
     let instance_id = InstanceId::new(1);
-    let kvs = KvsBuilder::<Kvs>::new(instance_id)
+    let mut kvs = KvsBuilder::<Kvs>::new(instance_id)
         .dir("./kvs_data") // Set directory for storage
         .build()
         .expect("Failed to build KVS");
@@ -87,16 +87,8 @@ fn main() {
     let value_i32 = kvs.get_value::<i32>("my_key").expect("Failed to get value as i32");
     println!("my_key (via get_value::<i32>) = {}", value_i32);
 
-    // Get a value as KvsValue
-    let value = kvs.get_value_kvs("my_key").expect("Failed to get value");
-    if let rust_kvs::kvs_value::KvsValue::I32(i) = value {
-        println!("my_key = {}", i);
-    } else {
-        println!("my_key is not an i32");
-    }
-
     // Remove a key
-   // kvs.remove_key("my_key").expect("Failed to remove key");
+    // kvs.remove_key("my_key").expect("Failed to remove key");
 
     // List all keys
     let keys = kvs.get_all_keys().expect("Failed to get all keys");
@@ -122,7 +114,7 @@ fn main() {
     kvs.flush().expect("Failed to flush KVS");
 
     // Call the type mismatch demo
-    type_mismatch_demo(&kvs);
+    type_mismatch_demo(&mut kvs);
 
     // Clean up: remove the directory and all its contents
     std::fs::remove_dir_all("./kvs_data").expect("Failed to remove kvs_data directory");

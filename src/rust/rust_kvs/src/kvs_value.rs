@@ -11,9 +11,6 @@
 
 
 
-use crate::error_code::ErrorCode;
-
-
 /// Key-value-storage value
 #[derive(Clone, Debug)]
 pub enum KvsValue {
@@ -118,51 +115,6 @@ impl From<KvsMap> for KvsValue {
     }
 }
 
-// Custom trait for conversion from &KvsValue
-pub trait TryFromKvsValue: Sized {
-    fn try_from_kvs_value(val: &KvsValue) -> Result<Self, ErrorCode>;
-}
-
-macro_rules! impl_tryfrom_kvsvalue {
-    ($t:ty, $variant:ident) => {
-        impl TryFromKvsValue for $t {
-            fn try_from_kvs_value(val: &KvsValue) -> Result<$t, ErrorCode> {
-                if let KvsValue::$variant(inner) = val {
-                    Ok(inner.clone())
-                } else {
-                    Err(ErrorCode::ConversionFailed)
-                }
-            }
-        }
-    };
-}
-impl_tryfrom_kvsvalue!(f64, F64);
-impl_tryfrom_kvsvalue!(i32, I32);
-impl_tryfrom_kvsvalue!(u32, U32);
-impl_tryfrom_kvsvalue!(i64, I64);
-impl_tryfrom_kvsvalue!(u64, U64);
-impl_tryfrom_kvsvalue!(bool, Boolean);
-impl_tryfrom_kvsvalue!(String, String);
-impl_tryfrom_kvsvalue!(Vec<KvsValue>, Array);
-impl_tryfrom_kvsvalue!(KvsMap, Object);
-
-// Allow retrieving the raw KvsValue via TryFromKvsValue
-impl TryFromKvsValue for KvsValue {
-    fn try_from_kvs_value(val: &KvsValue) -> Result<Self, crate::error_code::ErrorCode> {
-        Ok(val.clone())
-    }
-}
-
-impl TryFromKvsValue for () {
-    fn try_from_kvs_value(val: &KvsValue) -> Result<(), ErrorCode> {
-        if let KvsValue::Null = val {
-            Ok(())
-        } else {
-            Err(ErrorCode::ConversionFailed)
-        }
-    }
-}
-
 // Trait for extracting inner values from KvsValue
 pub trait KvsValueGet {
     fn get_inner_value(val: &KvsValue) -> Option<&Self>;
@@ -186,26 +138,90 @@ impl_kvs_get_inner_value!(u32, U32);
 impl_kvs_get_inner_value!(i64, I64);
 impl_kvs_get_inner_value!(u64, U64);
 
-// Bridge TryFrom<&KvsValue> for all supported types to TryFromKvsValue
-macro_rules! impl_std_tryfrom_kvsvalue {
-    ($t:ty) => {
-        impl<'a> TryFrom<&'a crate::kvs_value::KvsValue> for $t {
-            type Error = crate::error_code::ErrorCode;
-            fn try_from(value: &'a crate::kvs_value::KvsValue) -> Result<Self, Self::Error> {
-                <$t as crate::kvs_value::TryFromKvsValue>::try_from_kvs_value(value)
-            }
+// TryFrom<&KvsValue> for all supported types
+use std::convert::TryFrom;
+
+impl<'a> TryFrom<&'a KvsValue> for i32 {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::I32(n) => Ok(*n),
+            _ => Err("KvsValue is not an i32"),
         }
-    };
+    }
 }
-impl_std_tryfrom_kvsvalue!(f64);
-impl_std_tryfrom_kvsvalue!(i32);
-impl_std_tryfrom_kvsvalue!(u32);
-impl_std_tryfrom_kvsvalue!(i64);
-impl_std_tryfrom_kvsvalue!(u64);
-impl_std_tryfrom_kvsvalue!(bool);
-impl_std_tryfrom_kvsvalue!(String);
-impl_std_tryfrom_kvsvalue!(Vec<crate::kvs_value::KvsValue>);
-impl_std_tryfrom_kvsvalue!(KvsMap);
+impl<'a> TryFrom<&'a KvsValue> for u32 {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::U32(n) => Ok(*n),
+            _ => Err("KvsValue is not a u32"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for i64 {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::I64(n) => Ok(*n),
+            _ => Err("KvsValue is not an i64"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for u64 {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::U64(n) => Ok(*n),
+            _ => Err("KvsValue is not a u64"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for f64 {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::F64(n) => Ok(*n),
+            _ => Err("KvsValue is not an f64"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for bool {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::Boolean(b) => Ok(*b),
+            _ => Err("KvsValue is not a bool"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for String {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::String(s) => Ok(s.clone()),
+            _ => Err("KvsValue is not a String"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for Vec<KvsValue> {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::Array(arr) => Ok(arr.clone()),
+            _ => Err("KvsValue is not an Array"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for std::collections::HashMap<String, KvsValue> {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::Object(map) => Ok(map.clone()),
+            _ => Err("KvsValue is not an Object"),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -267,14 +283,14 @@ mod tests {
 
     #[test]
     fn test_from_vec() {
-        let v = KvsValue::from(vec![KvsValue::from(1), KvsValue::from(2)]);
+        let v = KvsValue::from(vec![KvsValue::from(1i32), KvsValue::from(2i32)]);
         assert!(matches!(v, KvsValue::Array(ref arr) if arr.len() == 2));
     }
 
     #[test]
     fn test_from_kvsmap() {
         let mut map = KvsMap::new();
-        map.insert("a".to_string(), KvsValue::from(1));
+        map.insert("a".to_string(), KvsValue::from(1i32));
         let v = KvsValue::from(map.clone());
         if let KvsValue::Object(ref obj) = v {
             assert!(obj.contains_key("a"));

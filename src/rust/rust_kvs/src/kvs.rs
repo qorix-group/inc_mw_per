@@ -21,17 +21,14 @@ use core::array::TryFromSliceError;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::{
-    atomic::{self, AtomicBool},
-    Mutex, MutexGuard, PoisonError,
-};
+use std::sync::atomic::{self, AtomicBool};
 
 
 
 //external crates
 use adler32::RollingAdler32;
 
-use crate::kvs_value::{KvsValue, TryFromKvsValue, KvsMap};
+use crate::kvs_value::{KvsValue, KvsMap};
 use crate::kvs_api::KvsApi;
 use crate::error_code::ErrorCode;
 use crate::kvs_backend::{PersistKvs, DefaultPersistKvs};
@@ -93,7 +90,7 @@ pub struct Kvs<J: PersistKvs = DefaultPersistKvs> {
     /// Storage data
     ///
     /// Feature: `FEAT_REQ__KVS__thread_safety` (Mutex)
-    kvs: Mutex<KvsMap>,
+    kvs: KvsMap,
 
     /// Optional default values
     ///
@@ -209,13 +206,6 @@ impl From<Vec<u8>> for ErrorCode {
     fn from(cause: Vec<u8>) -> Self {
         eprintln!("error: try_into from u8 vector failed: {:#?}", cause);
         ErrorCode::ConversionFailed
-    }
-}
-
-impl From<PoisonError<MutexGuard<'_, HashMap<std::string::String, KvsValue>>>> for ErrorCode {
-    fn from(cause: PoisonError<MutexGuard<'_, HashMap<std::string::String, KvsValue>>>) -> Self {
-        eprintln!("error: Mutex locking failed: {cause:#?}");
-        ErrorCode::MutexLockFailed
     }
 }
 
@@ -361,7 +351,7 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
         println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
 
         Ok(Kvs {
-            kvs: Mutex::new(kvs),
+            kvs: kvs,
             default,
             filename_prefix,
             flush_on_exit: AtomicBool::new(true),
@@ -373,7 +363,7 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///
     /// # Parameters
     ///   * `flush_on_exit`: Flag to control flush-on-exit behaviour
-    fn flush_on_exit(&self, flush_on_exit: bool) {
+    fn flush_on_exit(&mut self, flush_on_exit: bool) {
         self.flush_on_exit
             .store(flush_on_exit, atomic::Ordering::Relaxed);
     }
@@ -383,8 +373,8 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     /// # Return Values
     ///   * Ok: Reset of the KVS was successful
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
-    fn reset(&self) -> Result<(), ErrorCode> {
-        *self.kvs.lock()? = KvsMap::new();
+    fn reset(&mut self) -> Result<(), ErrorCode> {
+        self.kvs.clear();
         Ok(())
     }
 
@@ -394,21 +384,7 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * Ok: List of all keys
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> {
-        Ok(self.kvs.lock()?.keys().map(|x| x.to_string()).collect())
-    }
-
-    /// Get the assigned value for a given key using TryFromKvsValue
-    fn get_value_kvs<T>(&self, key: &str) -> Result<T, ErrorCode>
-    where
-        T: TryFromKvsValue + Clone {
-        let kvs = self.kvs.lock()?;
-        if let Some(value) = kvs.get(key) {
-            T::try_from_kvs_value(value)
-        } else if let Some(value) = self.default.get(key) {
-            T::try_from_kvs_value(value)
-        } else {
-            Err(ErrorCode::KeyNotFound)
-        }
+        Ok(self.kvs.keys().map(|x| x.to_string()).collect())
     }
 
     /// Check if a key exists
@@ -421,7 +397,7 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * Ok(`false`): Key doesn't exist
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn key_exists(&self, key: &str) -> Result<bool, ErrorCode> {
-        Ok(self.kvs.lock()?.contains_key(key))
+        Ok(self.kvs.contains_key(key))
     }
 
     /// Get the assigned value for a given key
@@ -445,9 +421,7 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
         for<'a> T: TryFrom<&'a KvsValue> + std::clone::Clone,
         for<'a> <T as TryFrom<&'a KvsValue>>::Error: std::fmt::Debug,
     {
-        let kvs = self.kvs.lock()?;
-
-        if let Some(value) = kvs.get(key) {
+        if let Some(value) = self.kvs.get(key) {
             match T::try_from(value) {
                 Ok(value) => Ok(value),
                 Err(err) => {
@@ -458,7 +432,6 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
                 }
             }
         } else if let Some(value) = self.default.get(key) {
-            // check if key has a default value
             match T::try_from(value) {
                 Ok(value) => Ok(value),
                 Err(err) => {
@@ -470,7 +443,6 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
             }
         } else {
             eprintln!("error: get_value could not find key: {key}");
-
             Err(ErrorCode::KeyNotFound)
         }
     }
@@ -509,7 +481,7 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     ///   * `ErrorCode::KeyNotFound`: Key wasn't found
     fn is_value_default(&self, key: &str) -> Result<bool, ErrorCode> {
-        if self.kvs.lock()?.contains_key(key) {
+        if self.kvs.contains_key(key) {
             Ok(false)
         } else if self.default.contains_key(key) {
             Ok(true)
@@ -528,11 +500,11 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * Ok: Value was assigned to key
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn set_value<S: Into<String>, V: Into<KvsValue>>(
-        &self,
+        &mut self,
         key: S,
         value: V,
     ) -> Result<(), ErrorCode> {
-        self.kvs.lock()?.insert(key.into(), value.into());
+        self.kvs.insert(key.into(), value.into());
         Ok(())
     }
 
@@ -545,8 +517,8 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * Ok: Key removed successfully
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     ///   * `ErrorCode::KeyNotFound`: Key not found
-    fn remove_key(&self, key: &str) -> Result<(), ErrorCode> {
-        if self.kvs.lock()?.remove(key).is_some() {
+    fn remove_key(&mut self, key: &str) -> Result<(), ErrorCode> {
+        if self.kvs.remove(key).is_some() {
             Ok(())
         } else {
             Err(ErrorCode::KeyNotFound)
@@ -566,14 +538,13 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * `ErrorCode::JsonGeneratorError`: Failed to serialize to JSON
     ///   * `ErrorCode::ConversionFailed`: JSON could not serialize into String
     ///   * `ErrorCode::UnmappedError`: Unmapped error
-    fn flush(&self) -> Result<(), ErrorCode> {
-        let map: KvsMap = self.kvs.lock()?.clone();
+    fn flush(&mut self) -> Result<(), ErrorCode> {
+        let map: KvsMap = self.kvs.clone();
         J::persist_kvs_to_file(&map, &format!("{}_0.json", self.filename_prefix))
             .map_err(|e| {
                 eprintln!("persist error: {e}");
                 ErrorCode::JsonParserError
             })?;
-        // Hash logic (unchanged)
         let buf = std::fs::read(format!("{}_0.json", self.filename_prefix))?;
         let hash = RollingAdler32::from_buffer(&buf).hash();
         let filename_hash = format!("{}_0.hash", self.filename_prefix);
@@ -630,7 +601,7 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * `ErrorCode::KvsFileReadError`: KVS file not found
     ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error
     ///   * `ErrorCode::UnmappedError`: Generic error
-    fn snapshot_restore(&self, id: SnapshotId) -> Result<(), ErrorCode> {
+    fn snapshot_restore(&mut self, id: SnapshotId) -> Result<(), ErrorCode> {
         // fail if the snapshot ID is the current KVS
         if id.0 == 0 {
             eprintln!("error: tried to restore current KVS as snapshot");
@@ -648,7 +619,8 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
             OpenJsonVerifyHash::No,
             "",
         )?;
-        *self.kvs.lock()? = kvs;
+        self.kvs.clear();
+        self.kvs.extend(kvs);
 
         Ok(())
     }
@@ -685,7 +657,6 @@ mod tests {
     use crate::kvs_backend::{PersistKvs, KvsBackendError};
     use std::sync::atomic::AtomicBool;
 
-    // Mock backend that does nothing for persistence
     #[derive(Default)]
     struct MockPersistKvs;
     impl PersistKvs for MockPersistKvs {
@@ -699,7 +670,7 @@ mod tests {
 
     fn new_test_kvs() -> Kvs<MockPersistKvs> {
         Kvs {
-            kvs: Mutex::new(KvsMap::new()),
+            kvs: KvsMap::new(),
             default: KvsMap::new(),
             filename_prefix: "test".to_string(),
             flush_on_exit: AtomicBool::new(false),
@@ -708,28 +679,28 @@ mod tests {
     }
     #[test]
     fn test_set_and_get_value() {
-        let kvs = new_test_kvs();
+        let mut kvs = new_test_kvs();
         kvs.set_value("foo", 123).unwrap();
         let val: i32 = kvs.get_value("foo").unwrap();
         assert_eq!(val, 123);
     }
     #[test]
     fn test_key_exists() {
-        let kvs = new_test_kvs();
+        let mut kvs = new_test_kvs();
         kvs.set_value("bar", 1).unwrap();
         assert!(kvs.key_exists("bar").unwrap());
         assert!(!kvs.key_exists("baz").unwrap());
     }
     #[test]
     fn test_remove_key() {
-        let kvs = new_test_kvs();
+        let mut kvs = new_test_kvs();
         kvs.set_value("x", 1).unwrap();
         assert!(kvs.remove_key("x").is_ok());
         assert!(kvs.remove_key("x").is_err());
     }
     #[test]
     fn test_get_all_keys() {
-        let kvs = new_test_kvs();
+        let mut kvs = new_test_kvs();
         kvs.set_value("a", 1).unwrap();
         kvs.set_value("b", 2).unwrap();
         let mut keys = kvs.get_all_keys().unwrap();
@@ -738,7 +709,7 @@ mod tests {
     }
     #[test]
     fn test_reset() {
-        let kvs = new_test_kvs();
+        let mut kvs = new_test_kvs();
         kvs.set_value("foo", 1).unwrap();
         kvs.reset().unwrap();
         assert!(kvs.get_all_keys().unwrap().is_empty());

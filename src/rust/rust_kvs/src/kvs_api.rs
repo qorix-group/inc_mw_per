@@ -12,7 +12,7 @@
 
 use crate::kvs::{InstanceId,OpenNeedDefaults,OpenNeedKvs,SnapshotId};
 use crate::error_code::ErrorCode;
-use crate::kvs_value::{KvsValue,TryFromKvsValue};
+use crate::kvs_value::{KvsValue};
 
 // The KvsApi trait defines the interface for a Key-Value Storage (KVS) API.
 // It provides methods for opening a KVS instance, managing key-value pairs, and handling snapshots
@@ -26,7 +26,7 @@ pub trait KvsApi {
     where
         Self: Sized;
 
-    fn reset(&self) -> Result<(), ErrorCode>;
+    fn reset(&mut self) -> Result<(), ErrorCode>;
     fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode>;
     fn key_exists(&self, key: &str) -> Result<bool, ErrorCode>;
     fn get_value<T>(&self, key: &str) -> Result<T, ErrorCode>
@@ -36,23 +36,18 @@ pub trait KvsApi {
     fn get_default_value(&self, key: &str) -> Result<KvsValue, ErrorCode>;
     fn is_value_default(&self, key: &str) -> Result<bool, ErrorCode>;
     fn set_value<S: Into<String>, J: Into<KvsValue>>(
-        &self,
+        &mut self,
         key: S,
         value: J,
     ) -> Result<(), ErrorCode>;
-    fn remove_key(&self, key: &str) -> Result<(), ErrorCode>;
-    fn flush_on_exit(&self, flush_on_exit: bool);
-    fn flush(&self) -> Result<(), ErrorCode>;
+    fn remove_key(&mut self, key: &str) -> Result<(), ErrorCode>;
+    fn flush_on_exit(&mut self, flush_on_exit: bool);
+    fn flush(&mut self) -> Result<(), ErrorCode>;
     fn snapshot_count(&self) -> usize;
     fn snapshot_max_count() -> usize
     where
         Self: Sized;
-    fn snapshot_restore(&self, id: SnapshotId) -> Result<(), ErrorCode>;
+    fn snapshot_restore(&mut self, id: SnapshotId) -> Result<(), ErrorCode>;
     fn get_kvs_filename(&self, id: SnapshotId) -> String;
     fn get_hash_filename(&self, id: SnapshotId) -> String;
-
-    /// Get the assigned value for a given key using TryFromKvsValue
-    fn get_value_kvs<T>(&self, key: &str) -> Result<T, ErrorCode>
-    where
-        T: TryFromKvsValue + Clone;
 }

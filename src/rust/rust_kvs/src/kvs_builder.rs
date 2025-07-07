@@ -112,10 +112,6 @@ where
     }
 }
 
-
-// Re-import TryFromKvsValue and KvsValueGet traits if they were moved
-pub use crate::kvs_value::{TryFromKvsValue, KvsValueGet};
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,7 +126,7 @@ mod tests {
             _need_kvs: crate::kvs::OpenNeedKvs,
             _dir: Option<String>,
         ) -> Result<Self, ErrorCode> where Self: Sized { Ok(MockKvs) }
-        fn reset(&self) -> Result<(), ErrorCode> { Ok(()) }
+        fn reset(&mut self) -> Result<(), ErrorCode> { Ok(()) }
         fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> { Ok(vec![]) }
         fn key_exists(&self, _key: &str) -> Result<bool, ErrorCode> { Ok(false) }
         fn get_value<T>(&self, _key: &str) -> Result<T, ErrorCode>
@@ -140,19 +136,15 @@ mod tests {
         { Err(ErrorCode::KeyNotFound) }
         fn get_default_value(&self, _key: &str) -> Result<crate::kvs_value::KvsValue, ErrorCode> { Err(ErrorCode::KeyNotFound) }
         fn is_value_default(&self, _key: &str) -> Result<bool, ErrorCode> { Ok(false) }
-        fn set_value<S: Into<String>, J: Into<crate::kvs_value::KvsValue>>(&self, _key: S, _value: J) -> Result<(), ErrorCode> { Ok(()) }
-        fn remove_key(&self, _key: &str) -> Result<(), ErrorCode> { Ok(()) }
-        fn flush_on_exit(&self, _flush_on_exit: bool) {}
-        fn flush(&self) -> Result<(), ErrorCode> { Ok(()) }
+        fn set_value<S: Into<String>, J: Into<crate::kvs_value::KvsValue>>(&mut self, _key: S, _value: J) -> Result<(), ErrorCode> { Ok(()) }
+        fn remove_key(&mut self, _key: &str) -> Result<(), ErrorCode> { Ok(()) }
+        fn flush_on_exit(&mut self, _flush_on_exit: bool) {}
+        fn flush(&mut self) -> Result<(), ErrorCode> { Ok(()) }
         fn snapshot_count(&self) -> usize { 0 }
         fn snapshot_max_count() -> usize where Self: Sized { 0 }
-        fn snapshot_restore(&self, _id: crate::kvs::SnapshotId) -> Result<(), ErrorCode> { Ok(()) }
+        fn snapshot_restore(&mut self, _id: crate::kvs::SnapshotId) -> Result<(), ErrorCode> { Ok(()) }
         fn get_kvs_filename(&self, _id: crate::kvs::SnapshotId) -> String { String::new() }
         fn get_hash_filename(&self, _id: crate::kvs::SnapshotId) -> String { String::new() }
-        fn get_value_kvs<T>(&self, _key: &str) -> Result<T, ErrorCode>
-        where
-            T: crate::kvs_value::TryFromKvsValue + Clone,
-        { Err(ErrorCode::KeyNotFound) }
     }
 
     #[must_use]

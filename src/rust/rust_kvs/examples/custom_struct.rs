@@ -19,11 +19,13 @@ impl<'a> TryFrom<&'a KvsValue> for MyStruct {
     fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
         if let KvsValue::Object(ref map) = value {
             let a = map.get("a")
-                .and_then(|v| i32::try_from(v).ok())
-                .ok_or("Missing or invalid 'a'")?;
+                .ok_or("Missing 'a'")?
+                .try_into()
+                .map_err(|_| "Invalid 'a'".to_string())?;
             let b = map.get("b")
-                .and_then(|v| String::try_from(v).ok())
-                .ok_or("Missing or invalid 'b'")?;
+                .ok_or("Missing 'b'")?
+                .try_into()
+                .map_err(|_| "Invalid 'b'".to_string())?;
             Ok(MyStruct { a, b })
         } else {
             Err("Expected object".to_string())
@@ -32,22 +34,21 @@ impl<'a> TryFrom<&'a KvsValue> for MyStruct {
 }
 
 // Implement conversion from MyStruct to KvsValue
-impl Into<KvsValue> for MyStruct {
-    fn into(self) -> KvsValue {
+impl From<MyStruct> for KvsValue {
+    fn from(s: MyStruct) -> KvsValue {
         let mut map = std::collections::HashMap::new();
-        map.insert("a".to_string(), KvsValue::from(self.a));
-        map.insert("b".to_string(), KvsValue::from(self.b));
+        map.insert("a".to_string(), KvsValue::from(s.a));
+        map.insert("b".to_string(), KvsValue::from(s.b));
         KvsValue::Object(map)
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     // Ensure the storage directory exists
     std::fs::create_dir_all("./kvs_data").expect("Failed to create kvs_data directory");
     // Create a new KVS instance with instance ID 1
     let instance_id = InstanceId::new(1);
-    let kvs = KvsBuilder::<Kvs>::new(instance_id)
+    let mut kvs = KvsBuilder::<Kvs>::new(instance_id)
         .dir("./kvs_data") // Optionally set directory
         .build()
         .map_err(|e| format!("KVS build error: {:?}", e))?;
