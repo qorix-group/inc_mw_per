@@ -660,11 +660,18 @@ mod tests {
     #[derive(Default)]
     struct MockPersistKvs;
     impl PersistKvs for MockPersistKvs {
-        fn get_kvs_from_file(_filename: &str, _kvs: &mut KvsMap) -> Result<(), KvsBackendError> {
-            Ok(())
+        fn get_kvs_from_file(filename: &str, kvs: &mut KvsMap) -> Result<(), KvsBackendError> {
+            // If file exists, simulate reading by doing nothing
+            if std::path::Path::new(filename).exists() {
+                Ok(())
+            } else {
+                // Simulate file not found
+                Err(KvsBackendError::Io(std::io::Error::from(std::io::ErrorKind::NotFound)))
+            }
         }
-        fn persist_kvs_to_file(_kvs: &KvsMap, _filename: &str) -> Result<(), KvsBackendError> {
-            Ok(())
+        fn persist_kvs_to_file(_kvs: &KvsMap, filename: &str) -> Result<(), KvsBackendError> {
+            // Actually create a dummy file so flush() can read it
+            std::fs::write(filename, b"dummy").map_err(KvsBackendError::Io)
         }
     }
 
@@ -713,5 +720,92 @@ mod tests {
         kvs.set_value("foo", 1).unwrap();
         kvs.reset().unwrap();
         assert!(kvs.get_all_keys().unwrap().is_empty());
+    }
+    #[test]
+    fn test_get_default_value() {
+        let mut kvs = new_test_kvs();
+        kvs.default.insert("foo".to_string(), 42.into());
+        let val = kvs.get_default_value("foo").unwrap();
+        assert_eq!(i32::try_from(&val).unwrap(), 42);
+        assert!(kvs.get_default_value("bar").is_err());
+    }
+    #[test]
+    fn test_is_value_default() {
+        let mut kvs = new_test_kvs();
+        kvs.default.insert("foo".to_string(), 1.into());
+        assert!(kvs.is_value_default("foo").unwrap());
+        kvs.set_value("foo", 2).unwrap();
+        assert!(!kvs.is_value_default("foo").unwrap());
+        assert!(kvs.is_value_default("bar").is_err());
+    }
+    #[test]
+    fn test_flush() {
+        let mut kvs = new_test_kvs();
+        kvs.set_value("foo", 1).unwrap();
+        // Should not error (no real file IO in MockPersistKvs)
+        assert!(kvs.flush().is_ok());
+    }
+    #[test]
+    fn test_snapshot_count_and_max() {
+        let kvs = new_test_kvs();
+        // No files, so only current KVS exists
+        assert_eq!(kvs.snapshot_count(), 0);
+        assert_eq!(Kvs::<MockPersistKvs>::snapshot_max_count(), 3);
+    }
+    #[test]
+    fn test_snapshot_restore_invalid() {
+        let mut kvs = new_test_kvs();
+        // id 0 is invalid
+        assert!(matches!(kvs.snapshot_restore(crate::kvs::SnapshotId(0)), Err(ErrorCode::InvalidSnapshotId)));
+        // id > snapshot_count is invalid
+        assert!(matches!(kvs.snapshot_restore(crate::kvs::SnapshotId(1)), Err(ErrorCode::InvalidSnapshotId)));
+    }
+    #[test]
+    fn test_get_kvs_and_hash_filename() {
+        let kvs = new_test_kvs();
+        let id = crate::kvs::SnapshotId(2);
+        assert!(kvs.get_kvs_filename(id).ends_with("_2.json"));
+        let id2 = crate::kvs::SnapshotId(2);
+        assert!(kvs.get_hash_filename(id2).ends_with("_2.hash"));
+    }
+    #[test]
+    fn test_set_and_get_all_supported_types() {
+        let mut kvs = new_test_kvs();
+        // i32
+        kvs.set_value("i32", -42i32).unwrap();
+        assert_eq!(kvs.get_value::<i32>("i32").unwrap(), -42);
+        // u32
+        kvs.set_value("u32", 42u32).unwrap();
+        assert_eq!(kvs.get_value::<u32>("u32").unwrap(), 42);
+        // i64
+        kvs.set_value("i64", -123456789i64).unwrap();
+        assert_eq!(kvs.get_value::<i64>("i64").unwrap(), -123456789);
+        // u64
+        kvs.set_value("u64", 123456789u64).unwrap();
+        assert_eq!(kvs.get_value::<u64>("u64").unwrap(), 123456789);
+        // f64
+        kvs.set_value("f64", 3.1415f64).unwrap();
+        assert!((kvs.get_value::<f64>("f64").unwrap() - 3.1415).abs() < 1e-10);
+        // bool
+        kvs.set_value("bool", true).unwrap();
+        assert_eq!(kvs.get_value::<bool>("bool").unwrap(), true);
+        // String
+        kvs.set_value("string", "hello").unwrap();
+        assert_eq!(kvs.get_value::<String>("string").unwrap(), "hello");
+        // ()
+        kvs.set_value("unit", ()).unwrap();
+        let val = kvs.get_value::<KvsValue>("unit").unwrap();
+        assert!(matches!(val, KvsValue::Null));
+        // Vec<KvsValue>
+        let arr = vec![KvsValue::from(1i32), KvsValue::from(2i32)];
+        kvs.set_value("array", arr.clone()).unwrap();
+        let arr_got = kvs.get_value::<Vec<KvsValue>>("array").unwrap();
+        assert!(arr_got == arr);
+        // HashMap<String, KvsValue>
+        let mut map = std::collections::HashMap::new();
+        map.insert("a".to_string(), KvsValue::from(1i32));
+        kvs.set_value("object", map.clone()).unwrap();
+        let map_got = kvs.get_value::<std::collections::HashMap<String, KvsValue>>("object").unwrap();
+        assert!(map_got == map);
     }
 }

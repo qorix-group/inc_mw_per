@@ -12,7 +12,7 @@
 
 
 /// Key-value-storage value
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KvsValue {
     /// 32-bit signed integer
     I32(i32),
@@ -220,6 +220,12 @@ impl<'a> TryFrom<&'a KvsValue> for std::collections::HashMap<String, KvsValue> {
             KvsValue::Object(map) => Ok(map.clone()),
             _ => Err("KvsValue is not an Object"),
         }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for KvsValue {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        Ok(value.clone())
     }
 }
 
