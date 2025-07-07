@@ -49,8 +49,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instance_id = InstanceId::new(1);
     let kvs = KvsBuilder::<Kvs>::new(instance_id)
         .dir("./kvs_data") // Optionally set directory
-        .need_defaults(false)
-        .need_kvs(false)
         .build()
         .map_err(|e| format!("KVS build error: {:?}", e))?;
 

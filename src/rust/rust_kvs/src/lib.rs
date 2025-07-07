@@ -144,19 +144,15 @@
 
 
 
-pub use crate::json_value::{KvsJson, TinyJson, KvsJsonError};
-pub use crate::json_value::JsonValue;
-
 pub mod kvs_builder;
-pub mod kvs_value;
 pub mod kvs_api;
 pub mod kvs;
 pub mod error_code;
-pub mod kvs_backend;
+pub mod kvs_value;
+mod kvs_backend;
+mod json_backend;
 
-//json specifics
-pub mod json_value;
-pub mod ser_des;
+
 
 
 

@@ -77,8 +77,6 @@ fn main() {
     let instance_id = InstanceId::new(1);
     let kvs = KvsBuilder::<Kvs>::new(instance_id)
         .dir("./kvs_data") // Set directory for storage
-        .need_defaults(false) // Don't require defaults
-        .need_kvs(false) // Don't require existing KVS file
         .build()
         .expect("Failed to build KVS");
 

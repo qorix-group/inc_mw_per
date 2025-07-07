@@ -36,8 +36,6 @@ use crate::kvs_api::KvsApi;
 use crate::error_code::ErrorCode;
 use crate::kvs_backend::{PersistKvs, DefaultPersistKvs};
 
-//json dependencies
-use crate::json_value::{TinyJson, KvsJsonError};
 
 
 /// Maximum number of snapshots
@@ -190,13 +188,6 @@ impl From<std::io::Error> for ErrorCode {
                 ErrorCode::UnmappedError
             }
         }
-    }
-}
-
-impl From<KvsJsonError> for ErrorCode {
-    fn from(cause: KvsJsonError) -> Self {
-        eprintln!("error: JSON operation error: {cause:#?}");
-        ErrorCode::JsonParserError
     }
 }
 
@@ -691,8 +682,22 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
 mod tests {
     use super::*;
     use crate::kvs_value::KvsMap;
+    use crate::kvs_backend::{PersistKvs, KvsBackendError};
     use std::sync::atomic::AtomicBool;
-    fn new_test_kvs() -> Kvs<DefaultPersistKvs<TinyJson>> {
+
+    // Mock backend that does nothing for persistence
+    #[derive(Default)]
+    struct MockPersistKvs;
+    impl PersistKvs for MockPersistKvs {
+        fn get_kvs_from_file(_filename: &str, _kvs: &mut KvsMap) -> Result<(), KvsBackendError> {
+            Ok(())
+        }
+        fn persist_kvs_to_file(_kvs: &KvsMap, _filename: &str) -> Result<(), KvsBackendError> {
+            Ok(())
+        }
+    }
+
+    fn new_test_kvs() -> Kvs<MockPersistKvs> {
         Kvs {
             kvs: Mutex::new(KvsMap::new()),
             default: KvsMap::new(),

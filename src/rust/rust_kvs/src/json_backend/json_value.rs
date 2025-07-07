@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use crate::kvs_backend::KvsBackendError;
+
 pub type JsonValue = tinyjson::JsonValue;
 
 // Implementation for tinyjson
@@ -11,13 +13,14 @@ use tinyjson::{JsonParseError, JsonGenerateError};
 #[derive(Default)]
 pub struct TinyJson;
 
+
 impl KvsJson for TinyJson {
     type Value = JsonValue;
-    fn parse(s: &str) -> Result<Self::Value, KvsJsonError> {
-        s.parse().map_err(|e: JsonParseError| KvsJsonError(format!("parse error: {:?}", e)))
+    fn parse(s: &str) -> Result<Self::Value, KvsBackendError> {
+        s.parse().map_err(|e: JsonParseError| KvsBackendError::Json(format!("parse error: {:?}", e)))
     }
-    fn stringify(val: &Self::Value) -> Result<String, KvsJsonError> {
-        val.stringify().map_err(|e: JsonGenerateError| KvsJsonError(format!("stringify: {}", e.message())))
+    fn stringify(val: &Self::Value) -> Result<String, KvsBackendError> {
+        val.stringify().map_err(|e: JsonGenerateError| KvsBackendError::Json(format!("stringify: {}", e.message())))
     }
     fn get_object(val: &Self::Value) -> Option<&HashMap<String, Self::Value>> {
         val.get::<HashMap<String, JsonValue>>()
@@ -45,16 +48,7 @@ impl KvsJson for TinyJson {
     }
 }
 
-// Error type for trait compatibility
-#[derive(Debug)]
-pub struct KvsJsonError(pub String);
 
-impl std::fmt::Display for KvsJsonError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-impl std::error::Error for KvsJsonError {}
 
 // Conversion between KvsValue and JsonValue
 use crate::kvs_value::KvsValue;
@@ -62,8 +56,8 @@ use crate::kvs_value::KvsValue;
 
 pub trait KvsJson {
     type Value;
-    fn parse(s: &str) -> Result<Self::Value, KvsJsonError>;
-    fn stringify(val: &Self::Value) -> Result<String, KvsJsonError>;
+    fn parse(s: &str) -> Result<Self::Value, KvsBackendError>;
+    fn stringify(val: &Self::Value) -> Result<String, KvsBackendError>;
     fn get_object(val: &Self::Value) -> Option<&HashMap<String, Self::Value>>;
     fn get_array(val: &Self::Value) -> Option<&Vec<Self::Value>>;
     fn get_f64(val: &Self::Value) -> Option<f64>;
