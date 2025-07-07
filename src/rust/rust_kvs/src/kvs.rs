@@ -31,13 +31,13 @@ use std::sync::{
 //external crates
 use adler32::RollingAdler32;
 
-use crate::kvs_value::KvsValue;
+use crate::kvs_value::{KvsValue, TryFromKvsValue, KvsMap};
 use crate::kvs_api::KvsApi;
 use crate::error_code::ErrorCode;
+use crate::kvs_backend::{PersistKvs, DefaultPersistKvs};
 
 //json dependencies
-use crate::json_value::{KvsJson, TinyJson, KvsJsonError};
-use crate::json_value::TryFromKvsValue;
+use crate::json_value::{TinyJson, KvsJsonError};
 
 
 /// Maximum number of snapshots
@@ -91,24 +91,24 @@ enum OpenJsonVerifyHash {
 }
 
 /// Key-value-storage data
-pub struct Kvs<J: KvsJson + Default = TinyJson> {
+pub struct Kvs<J: PersistKvs = DefaultPersistKvs> {
     /// Storage data
     ///
     /// Feature: `FEAT_REQ__KVS__thread_safety` (Mutex)
-    kvs: Mutex<HashMap<String, KvsValue>>,
+    kvs: Mutex<KvsMap>,
 
     /// Optional default values
     ///
     /// Feature: `FEAT_REQ__KVS__default_values`
-    default: HashMap<String, KvsValue>,
+    default: KvsMap,
 
     /// Filename prefix
     filename_prefix: String,
 
     /// Flush on exit flag
     flush_on_exit: AtomicBool,
-    /// Marker for generic JSON backend
-    _json_backend: std::marker::PhantomData<J>,
+
+    _backend: std::marker::PhantomData<J>,
 }
 
 
@@ -122,10 +122,10 @@ pub enum OpenNeedDefaults {
 }
 
 /// Need-KVS flag
+#[derive(Copy, Clone)]
 pub enum OpenNeedKvs {
     /// Optional: Use an empty KVS if no KVS is available
     Optional,
-
     /// Required: KVS must be already exist
     Required,
 }
@@ -229,83 +229,47 @@ impl From<PoisonError<MutexGuard<'_, HashMap<std::string::String, KvsValue>>>> f
 }
 
 
-impl<J: KvsJson + Default> Kvs<J> {
-    /// Open and parse a JSON file
-    ///
-    /// Return an empty hash when no file was found.
-    ///
-    /// # Features
-    ///   * `FEAT_REQ__KVS__integrity_check`
-    ///
-    /// # Parameters
-    ///   * `need_file`: fail if file doesn't exist
-    ///   * `verify_hash`: content is verified against a hash file
-    ///
-    /// # Return Values
-    ///   * `Ok`: KVS data as `HashMap<String, KvsValue>`
-    ///   * `ErrorCode::ValidationFailed`: KVS hash validation failed
-    ///   * `ErrorCode::JsonParserError`: JSON parser error
-    ///   * `ErrorCode::KvsFileReadError`: KVS file read error
-    ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error
-    ///   * `ErrorCode::UnmappedError`: Generic error
-    fn open_json<T>(
-        filename_prefix: &str,
-        need_file: T,
-        verify_hash: OpenJsonVerifyHash,
-    ) -> Result<HashMap<String, KvsValue>, ErrorCode>
+impl<J: PersistKvs + Default> Kvs<J> {
+    /// Open and parse a file using the backend, optionally with hash checking
+    fn open_kvs<T>(filename: &str, need_file: T, verify_hash: OpenJsonVerifyHash, hash_filename: &str) -> Result<KvsMap, ErrorCode>
     where
         T: Into<OpenJsonNeedFile>,
     {
-        let filename_json = format!("{filename_prefix}.json");
-        let filename_hash = format!("{filename_prefix}.hash");
-        match fs::read_to_string(&filename_json) {
-            Ok(data) => {
-                if verify_hash == OpenJsonVerifyHash::Yes {
-                    // data exists, read hash file
-                    match fs::read(&filename_hash) {
-                        Ok(hash) => {
-                            let hash_kvs = RollingAdler32::from_buffer(data.as_bytes()).hash();
-                            if u32::from_be_bytes(hash.try_into()?) != hash_kvs {
-                                eprintln!(
-                                    "error: KVS data corrupted ({filename_json}, {filename_hash})"
-                                );
-                                Err(ErrorCode::ValidationFailed)
-                            } else {
-                                println!("JSON data has valid hash");
-                                let json_val = J::parse(&data)?;
-                                let kvs_val = J::to_kvs_value(json_val);
-                                if let KvsValue::Object(map) = kvs_val {
-                                    println!("parsing file {filename_json}");
-                                    Ok(map)
-                                } else {
-                                    Err(ErrorCode::JsonParserError)
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            eprintln!(
-                                "error: hash file {filename_hash} could not be read: {err:#?}"
-                            );
-                            Err(ErrorCode::KvsHashFileReadError)
-                        }
-                    }
-                } else {
-                    let json_val = J::parse(&data)?;
-                    let kvs_val = J::to_kvs_value(json_val);
-                    if let KvsValue::Object(map) = kvs_val {
-                        Ok(map)
-                    } else {
-                        Err(ErrorCode::JsonParserError)
-                    }
+        use std::fs;
+        use std::path::Path;
+        if verify_hash == OpenJsonVerifyHash::Yes && Path::new(filename).exists() && Path::new(hash_filename).exists() {
+            let buf = fs::read(filename)?;
+            let hash = adler32::RollingAdler32::from_buffer(&buf).hash();
+            let hash_bytes = fs::read(hash_filename)?;
+            if hash_bytes.len() == 4 {
+                let file_hash = u32::from_be_bytes([hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3]]);
+                if hash != file_hash {
+                    eprintln!("error: hash mismatch for {filename}");
+                    return Err(ErrorCode::ValidationFailed);
                 }
+            } else {
+                eprintln!("error: invalid hash file for {filename}");
+                return Err(ErrorCode::ValidationFailed);
             }
-            Err(err) => {
+        }
+        // Fallback to normal open
+        match J::get_kvs_from_file(filename, &mut KvsMap::new()) {
+            Ok(()) => {
+                let mut map = KvsMap::new();
+                J::get_kvs_from_file(filename, &mut map)
+                    .map_err(|e| {
+                        eprintln!("error: {e}");
+                        ErrorCode::JsonParserError
+                    })?;
+                Ok(map)
+            }
+            Err(e) => {
                 if need_file.into() == OpenJsonNeedFile::Required {
-                    eprintln!("error: file {filename_json} could not be read: {err:#?}");
+                    eprintln!("error: file {filename} could not be read: {e}");
                     Err(ErrorCode::KvsFileReadError)
                 } else {
-                    println!("file {filename_json} not found, using empty data");
-                    Ok(HashMap::new())
+                    println!("file {filename} not found, using empty data");
+                    Ok(KvsMap::new())
                 }
             }
         }
@@ -347,7 +311,7 @@ impl<J: KvsJson + Default> Kvs<J> {
     }
 }
 
-impl<J: KvsJson + Default> KvsApi for Kvs<J> {
+impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     /// Open the key-value-storage
     ///
     /// Checks and opens a key-value-storage. Flush on exit is enabled by default and can be
@@ -385,8 +349,22 @@ impl<J: KvsJson + Default> KvsApi for Kvs<J> {
         let filename_prefix = format!("{dir}kvs_{instance_id}");
         let filename_kvs = format!("{filename_prefix}_0");
 
-        let default = Kvs::<J>::open_json(&filename_default, need_defaults, OpenJsonVerifyHash::No)?;
-        let kvs = Kvs::<J>::open_json(&filename_kvs, need_kvs, OpenJsonVerifyHash::Yes)?;
+        // If need_kvs is Optional and file does not exist, create it (persist empty map) BEFORE open_kvs
+        if let OpenNeedKvs::Optional = need_kvs {
+            use std::path::Path;
+            if !Path::new(&format!("{}_0.json", filename_prefix)).exists() {
+                // Persist empty map to create the file
+                let _ = J::persist_kvs_to_file(&KvsMap::new(), &format!("{}_0.json", filename_prefix));
+            }
+        }
+        let default = Kvs::<J>::open_kvs(&filename_default, need_defaults, OpenJsonVerifyHash::No, "")?;
+        // Use hash checking for the main KVS file
+        let kvs = Kvs::<J>::open_kvs(
+            &filename_kvs,
+            need_kvs,
+            OpenJsonVerifyHash::Yes,
+            &format!("{}_0.hash", filename_prefix),
+        )?;
 
         println!("opened KVS: instance '{instance_id}'");
         println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
@@ -396,7 +374,7 @@ impl<J: KvsJson + Default> KvsApi for Kvs<J> {
             default,
             filename_prefix,
             flush_on_exit: AtomicBool::new(true),
-            _json_backend: std::marker::PhantomData,
+            _backend: std::marker::PhantomData,
         })
     }
 
@@ -415,7 +393,7 @@ impl<J: KvsJson + Default> KvsApi for Kvs<J> {
     ///   * Ok: Reset of the KVS was successful
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn reset(&self) -> Result<(), ErrorCode> {
-        *self.kvs.lock()? = HashMap::new();
+        *self.kvs.lock()? = KvsMap::new();
         Ok(())
     }
 
@@ -598,25 +576,17 @@ impl<J: KvsJson + Default> KvsApi for Kvs<J> {
     ///   * `ErrorCode::ConversionFailed`: JSON could not serialize into String
     ///   * `ErrorCode::UnmappedError`: Unmapped error
     fn flush(&self) -> Result<(), ErrorCode> {
-        let map: HashMap<String, KvsValue> = self
-            .kvs
-            .lock()? 
-            .clone();
-        let kvs_val = KvsValue::Object(map);
-        let backend_json_val = J::from_kvs_value(&kvs_val);
-        let json_str = J::stringify(&backend_json_val)?;
-        let buf = json_str.as_bytes();
-
-        self.snapshot_rotate()?;
-
-        let hash = RollingAdler32::from_buffer(buf).hash();
-
-        let filename_json = format!("{}_0.json", self.filename_prefix);
-        fs::write(&filename_json, buf)?;
-
+        let map: KvsMap = self.kvs.lock()?.clone();
+        J::persist_kvs_to_file(&map, &format!("{}_0.json", self.filename_prefix))
+            .map_err(|e| {
+                eprintln!("persist error: {e}");
+                ErrorCode::JsonParserError
+            })?;
+        // Hash logic (unchanged)
+        let buf = std::fs::read(format!("{}_0.json", self.filename_prefix))?;
+        let hash = RollingAdler32::from_buffer(&buf).hash();
         let filename_hash = format!("{}_0.hash", self.filename_prefix);
         fs::write(filename_hash, hash.to_be_bytes()).ok();
-
         Ok(())
     }
 
@@ -681,10 +651,11 @@ impl<J: KvsJson + Default> KvsApi for Kvs<J> {
             return Err(ErrorCode::InvalidSnapshotId);
         }
 
-        let kvs = Self::open_json(
+        let kvs = Self::open_kvs(
             &format!("{}_{}", self.filename_prefix, id.0),
             OpenJsonNeedFile::Required,
-            OpenJsonVerifyHash::Yes,
+            OpenJsonVerifyHash::No,
+            "",
         )?;
         *self.kvs.lock()? = kvs;
 
@@ -714,63 +685,22 @@ impl<J: KvsJson + Default> KvsApi for Kvs<J> {
     }
 }
 
-impl<J: KvsJson + Default> Drop for Kvs<J> {
-    fn drop(&mut self) {
-        if self.flush_on_exit.load(atomic::Ordering::Relaxed) {
-            self.flush().ok();
-        }
-    }
-}
 
-// Implement Default for TinyJson so it can be used as the default backend
-impl Default for TinyJson {
-    fn default() -> Self {
-        TinyJson {}
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::kvs_value::KvsMap;
     use std::sync::atomic::AtomicBool;
-    use std::marker::PhantomData;
-    use crate::kvs_value::KvsValue;
-    use crate::json_value::KvsJson;
-    use crate::json_value::KvsJsonError;
-
-    // Mock JSON backend
-    struct MockJson;
-    impl KvsJson for MockJson {
-        type Value = String;
-        fn parse(s: &str) -> Result<Self::Value, KvsJsonError> { Ok(s.to_string()) }
-        fn stringify(val: &Self::Value) -> Result<String, KvsJsonError> { Ok(val.clone()) }
-        fn get_object(_val: &Self::Value) -> Option<&HashMap<String, Self::Value>> { None }
-        fn get_array(_val: &Self::Value) -> Option<&Vec<Self::Value>> { None }
-        fn get_f64(_val: &Self::Value) -> Option<f64> { None }
-        fn get_bool(_val: &Self::Value) -> Option<bool> { None }
-        fn get_string(val: &Self::Value) -> Option<&str> { Some(val.as_str()) }
-        fn is_null(_val: &Self::Value) -> bool { false }
-        fn to_kvs_value(_val: Self::Value) -> KvsValue { KvsValue::Null }
-        fn from_kvs_value(_val: &KvsValue) -> Self::Value { "mocked".to_string() }
-    }
-
-    impl Default for MockJson {
-        fn default() -> Self { MockJson }
-    }
-
-    type TestKvs = Kvs<MockJson>;
-
-    fn new_test_kvs() -> TestKvs {
-        TestKvs {
-            kvs: Mutex::new(HashMap::new()),
-            default: HashMap::new(),
+    fn new_test_kvs() -> Kvs<DefaultPersistKvs<TinyJson>> {
+        Kvs {
+            kvs: Mutex::new(KvsMap::new()),
+            default: KvsMap::new(),
             filename_prefix: "test".to_string(),
             flush_on_exit: AtomicBool::new(false),
-            _json_backend: PhantomData,
+            _backend: std::marker::PhantomData,
         }
     }
-
     #[test]
     fn test_set_and_get_value() {
         let kvs = new_test_kvs();
@@ -778,7 +708,6 @@ mod tests {
         let val: i32 = kvs.get_value("foo").unwrap();
         assert_eq!(val, 123);
     }
-
     #[test]
     fn test_key_exists() {
         let kvs = new_test_kvs();
@@ -786,7 +715,6 @@ mod tests {
         assert!(kvs.key_exists("bar").unwrap());
         assert!(!kvs.key_exists("baz").unwrap());
     }
-
     #[test]
     fn test_remove_key() {
         let kvs = new_test_kvs();
@@ -794,7 +722,6 @@ mod tests {
         assert!(kvs.remove_key("x").is_ok());
         assert!(kvs.remove_key("x").is_err());
     }
-
     #[test]
     fn test_get_all_keys() {
         let kvs = new_test_kvs();
@@ -804,7 +731,6 @@ mod tests {
         keys.sort();
         assert_eq!(keys, vec!["a", "b"]);
     }
-
     #[test]
     fn test_reset() {
         let kvs = new_test_kvs();

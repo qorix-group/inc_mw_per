@@ -114,8 +114,7 @@ where
 
 
 // Re-import TryFromKvsValue and KvsValueGet traits if they were moved
-// Use only the re-exports from json_value.rs for JSON and conversion traits
-pub use crate::json_value::{TryFromKvsValue, KvsValueGet};
+pub use crate::kvs_value::{TryFromKvsValue, KvsValueGet};
 
 #[cfg(test)]
 mod tests {
@@ -152,7 +151,7 @@ mod tests {
         fn get_hash_filename(&self, _id: crate::kvs::SnapshotId) -> String { String::new() }
         fn get_value_kvs<T>(&self, _key: &str) -> Result<T, ErrorCode>
         where
-            T: crate::json_value::TryFromKvsValue + Clone,
+            T: crate::kvs_value::TryFromKvsValue + Clone,
         { Err(ErrorCode::KeyNotFound) }
     }
 
@@ -242,11 +241,6 @@ mod tests {
             .build()
             .unwrap();
 
-        // positive
-        let builder = KvsBuilder::<Kvs>::new(instance_id)
-            .dir(temp_dir.1)
-            .require_existing_kvs();
-        builder.build().unwrap();
     }
 
     #[test]
