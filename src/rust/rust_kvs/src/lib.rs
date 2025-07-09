@@ -142,19 +142,13 @@
 //!     the IPC will use for the Rust implementation.
 #![forbid(unsafe_code)]
 
-
-
-pub mod kvs_builder;
-pub mod kvs_api;
-pub mod kvs;
 pub mod error_code;
-pub mod kvs_value;
-mod kvs_backend;
 mod json_backend;
+pub mod kvs;
+pub mod kvs_api;
+mod kvs_backend;
+pub mod kvs_builder;
+pub mod kvs_value;
 
-
-
-
-
-
-
+pub type DefaultKvs = kvs::Kvs<kvs_backend::DefaultPersistKvs>;
+pub type DefaultKvsBuilder = kvs_builder::KvsBuilder<DefaultKvs>;

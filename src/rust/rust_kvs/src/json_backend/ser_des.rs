@@ -1,7 +1,7 @@
 //! Serialization and deserialization logic for KvsValue <-> JsonValue
 
-use crate::kvs_value::KvsValue;
 use super::json_value::JsonValue;
+use crate::kvs_value::KvsValue;
 use std::collections::HashMap;
 
 impl From<&JsonValue> for KvsValue {
@@ -9,7 +9,9 @@ impl From<&JsonValue> for KvsValue {
         match val {
             JsonValue::Object(obj) => {
                 // Type-tagged: { "type": ..., "value": ... }
-                if let (Some(JsonValue::String(type_str)), Some(value)) = (obj.get("type"), obj.get("value")) {
+                if let (Some(JsonValue::String(type_str)), Some(value)) =
+                    (obj.get("type"), obj.get("value"))
+                {
                     match type_str.as_str() {
                         "I32" => {
                             if let JsonValue::Number(num) = value {
@@ -76,7 +78,11 @@ impl From<&JsonValue> for KvsValue {
                         }
                         "Object" => {
                             if let JsonValue::Object(hm) = value {
-                                return KvsValue::Object(hm.iter().map(|(k, v)| (k.clone(), KvsValue::from(v))).collect());
+                                return KvsValue::Object(
+                                    hm.iter()
+                                        .map(|(k, v)| (k.clone(), KvsValue::from(v)))
+                                        .collect(),
+                                );
                             } else {
                                 return KvsValue::Null;
                             }
@@ -87,7 +93,11 @@ impl From<&JsonValue> for KvsValue {
                     }
                 }
                 // fallback: treat as object of kvs values
-                KvsValue::Object(obj.iter().map(|(k, v)| (k.clone(), KvsValue::from(v))).collect())
+                KvsValue::Object(
+                    obj.iter()
+                        .map(|(k, v)| (k.clone(), KvsValue::from(v)))
+                        .collect(),
+                )
             }
             JsonValue::Number(n) => KvsValue::F64(*n),
             JsonValue::Boolean(b) => KvsValue::Boolean(*b),

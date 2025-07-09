@@ -11,22 +11,23 @@
 
 //! # Verify KVS Base Functionality without Defaults
 
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, Kvs};
+use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_builder::KvsBuilder;
+use rust_kvs::kvs_value::KvsValue;
 use std::collections::HashMap;
 
-mod common;
 use crate::common::TempDir;
 
-/// Create a key-value-storage without defaults
+mod common;
+/// Create a key-value-storage without defaults via builder
 #[test]
-fn kvs_without_defaults() -> Result<(), ErrorCode> {
+fn kvs_without_defaults_builder() -> Result<(), ErrorCode> {
     let dir = TempDir::create()?;
     dir.set_current_dir()?;
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
+    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0)).build()?;
 
     kvs.set_value("number", 123.0)?;
     kvs.set_value("bool", true)?;
@@ -61,10 +62,9 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     // drop the current instance with flush-on-exit enabled and reopen storage
     drop(kvs);
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
-        .build()?;
+    let builder = KvsBuilder::<Kvs>::new(InstanceId::new(0));
+    let builder = builder.require_existing_kvs();
+    let kvs = builder.build()?;
 
     assert_eq!(kvs.get_value::<f64>("number")?, 123.0);
     assert!(kvs.get_value::<bool>("bool")?);
@@ -72,20 +72,26 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     assert_eq!(kvs.get_value::<()>("null"), Ok(()));
 
     let json_array = kvs.get_value::<Vec<KvsValue>>("array")?;
-    assert_eq!(json_array[0].get(), Some(&456.0));
-    assert_eq!(json_array[1].get(), Some(&false));
-    assert_eq!(json_array[2].get(), Some(&"Bye".to_string()));
+    assert_eq!(f64::try_from(&json_array[0]), Ok(456.0));
+    assert_eq!(bool::try_from(&json_array[1]), Ok(false));
+    assert_eq!(String::try_from(&json_array[2]), Ok("Bye".to_string()));
 
     let json_map = kvs.get_value::<HashMap<String, KvsValue>>("object")?;
-    assert_eq!(json_map["sub-number"].get(), Some(&789.0));
-    assert_eq!(json_map["sub-bool"].get(), Some(&true));
-    assert_eq!(json_map["sub-string"].get(), Some(&"Hi".to_string()));
-    assert_eq!(json_map["sub-null"].get(), Some(&()));
+    assert_eq!(f64::try_from(&json_map["sub-number"]), Ok(789.0));
+    assert_eq!(bool::try_from(&json_map["sub-bool"]), Ok(true));
+    assert_eq!(
+        String::try_from(&json_map["sub-string"]),
+        Ok("Hi".to_string())
+    );
+    assert_eq!(<()>::try_from(&json_map["sub-null"]), Ok(()));
 
-    let json_sub_array = &json_map["sub-array"];
-    assert_eq!(json_sub_array[0].get(), Some(&1246.0));
-    assert_eq!(json_sub_array[1].get(), Some(&false));
-    assert_eq!(json_sub_array[2].get(), Some(&"Moin".to_string()));
+    if let KvsValue::Array(sub_arr) = &json_map["sub-array"] {
+        assert_eq!(f64::try_from(&sub_arr[0]), Ok(1246.0));
+        assert_eq!(bool::try_from(&sub_arr[1]), Ok(false));
+        assert_eq!(String::try_from(&sub_arr[2]), Ok("Moin".to_string()));
+    } else {
+        panic!("sub-array is not an array");
+    }
 
     // test for non-existent values
     assert_eq!(

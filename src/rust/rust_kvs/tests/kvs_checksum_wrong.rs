@@ -11,7 +11,11 @@
 
 //! # Verify KVS Open with wrong Checksum
 
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue, SnapshotId};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, Kvs, SnapshotId};
+use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_builder::KvsBuilder;
+use rust_kvs::kvs_value::KvsValue;
 
 mod common;
 use crate::common::TempDir;
@@ -22,10 +26,7 @@ fn kvs_checksum_wrong() -> Result<(), ErrorCode> {
     let dir = TempDir::create()?;
     dir.set_current_dir()?;
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
+    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0)).build()?;
 
     kvs.set_value("number", 123.0)?;
     kvs.set_value("bool", true)?;
@@ -49,10 +50,9 @@ fn kvs_checksum_wrong() -> Result<(), ErrorCode> {
     // modify the checksum
     std::fs::write(hash_filename, vec![0x12, 0x34, 0x56, 0x78])?;
 
-    // opening must fail because of the missing checksum file
+    // opening must fail because of the wrong checksum file
     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
+        .require_existing_kvs()
         .build();
 
     assert_eq!(kvs.err(), Some(ErrorCode::ValidationFailed));

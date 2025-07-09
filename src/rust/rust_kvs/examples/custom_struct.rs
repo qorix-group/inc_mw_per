@@ -1,8 +1,8 @@
 //! Example: Using rust_kvs with a custom user-defined struct
 
 use rust_kvs::kvs::{InstanceId, Kvs};
-use rust_kvs::kvs_builder::KvsBuilder;
 use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_builder::KvsBuilder;
 use rust_kvs::kvs_value::KvsValue;
 
 use std::convert::TryFrom;
@@ -18,11 +18,13 @@ impl<'a> TryFrom<&'a KvsValue> for MyStruct {
     type Error = String;
     fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
         if let KvsValue::Object(ref map) = value {
-            let a = map.get("a")
+            let a = map
+                .get("a")
                 .ok_or("Missing 'a'")?
                 .try_into()
                 .map_err(|_| "Invalid 'a'".to_string())?;
-            let b = map.get("b")
+            let b = map
+                .get("b")
                 .ok_or("Missing 'b'")?
                 .try_into()
                 .map_err(|_| "Invalid 'b'".to_string())?;
@@ -53,10 +55,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .map_err(|e| format!("KVS build error: {:?}", e))?;
 
-    let my_struct = MyStruct { a: 42, b: "hello".to_string() };
+    let my_struct = MyStruct {
+        a: 42,
+        b: "hello".to_string(),
+    };
     kvs.set_value("my_key", my_struct.clone())
         .map_err(|e| format!("Set value error: {:?}", e))?;
-    let loaded: MyStruct = kvs.get_value("my_key")
+    let loaded: MyStruct = kvs
+        .get_value("my_key")
         .map_err(|e| format!("Get value error: {:?}", e))?;
     assert_eq!(my_struct, loaded);
     println!("Loaded struct: {:?}", loaded);

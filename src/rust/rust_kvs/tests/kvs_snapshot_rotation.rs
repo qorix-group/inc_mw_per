@@ -11,7 +11,11 @@
 
 //! # Verify Snapshot Rotation
 
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue, SnapshotId};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, Kvs, SnapshotId};
+use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_builder::KvsBuilder;
+use rust_kvs::kvs_value::KvsValue;
 use std::collections::HashMap;
 
 mod common;
@@ -23,7 +27,7 @@ fn kvs_snapshot_rotation() -> Result<(), ErrorCode> {
     let dir = TempDir::create()?;
     dir.set_current_dir()?;
 
-    let max_count = Kvs::snapshot_max_count();
+    let max_count = <Kvs as KvsApi>::snapshot_max_count();
     let mut kvs = create_kvs()?;
 
     // we need a double zero here because after the first flush no snapshot is created
@@ -40,9 +44,8 @@ fn kvs_snapshot_rotation() -> Result<(), ErrorCode> {
 
         // drop the current instance with flush-on-exit enabled and re-open it
         drop(kvs);
-        kvs = KvsBuilder::new(InstanceId::new(0))
-            .need_defaults(false)
-            .need_kvs(true)
+        kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+            .require_existing_kvs()
             .build()?;
     }
 
@@ -60,10 +63,7 @@ fn kvs_snapshot_rotation() -> Result<(), ErrorCode> {
 
 /// Create an example KVS
 fn create_kvs() -> Result<Kvs, ErrorCode> {
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
+    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0)).build()?;
 
     kvs.set_value("number", 123.0)?;
     kvs.set_value("bool", true)?;

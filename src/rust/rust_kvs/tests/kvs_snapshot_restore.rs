@@ -11,7 +11,11 @@
 
 //! # Verify Snapshot Recovery
 
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, SnapshotId};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, Kvs, SnapshotId};
+use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_builder::KvsBuilder;
+use std::vec;
 
 mod common;
 use crate::common::TempDir;
@@ -22,11 +26,8 @@ fn kvs_snapshot_restore() -> Result<(), ErrorCode> {
     let dir = TempDir::create()?;
     dir.set_current_dir()?;
 
-    let max_count = Kvs::snapshot_max_count();
-    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
+    let max_count = <Kvs as KvsApi>::snapshot_max_count();
+    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0)).build()?;
 
     // we need a double zero here because after the first flush no snapshot is created
     // and the max count is also added twice to make sure we rotate once
@@ -43,9 +44,8 @@ fn kvs_snapshot_restore() -> Result<(), ErrorCode> {
 
         // drop the current instance with flush-on-exit enabled and re-open it
         drop(kvs);
-        kvs = KvsBuilder::new(InstanceId::new(0))
-            .need_defaults(false)
-            .need_kvs(true)
+        kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+            .require_existing_kvs()
             .build()?;
     }
 

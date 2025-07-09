@@ -80,10 +80,12 @@
 //!
 
 use pico_args::Arguments;
-use rust_kvs::{
-    ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue, OpenNeedDefaults, OpenNeedKvs,
-    SnapshotId,
-};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, SnapshotId};
+use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_value::KvsValue;
+use rust_kvs::DefaultKvs;
+use rust_kvs::DefaultKvsBuilder;
 use std::collections::HashMap;
 use tinyjson::JsonValue;
 
@@ -118,7 +120,7 @@ enum SupportedTypes {
 /// Converts a TinyJSON value to a KVS value.
 fn from_tinyjson(value: &JsonValue) -> KvsValue {
     match value {
-        JsonValue::Number(n) => KvsValue::Number(*n),
+        JsonValue::Number(n) => KvsValue::F64(*n),
         JsonValue::Boolean(b) => KvsValue::Boolean(*b),
         JsonValue::String(s) => KvsValue::String(s.clone()),
         JsonValue::Null => KvsValue::Null,
@@ -139,7 +141,7 @@ fn from_tinyjson(value: &JsonValue) -> KvsValue {
 /// Gets the key-value pair from the KVS and prints it to the console.
 /// This function checks if the key exists and if it is a default value.
 /// It also prints the default value.
-fn _getkey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
+fn _getkey(kvs: &mut DefaultKvs, mut args: Arguments) -> Result<(), ErrorCode> {
     println!("----------------------");
     let key: String = match args.opt_value_from_str("--key") {
         Ok(Some(val)) => val,
@@ -273,7 +275,7 @@ fn _getkey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
 /// If the payload is a valid JSON string, it will be parsed and stored as a KVSValue.
 /// If the payload is not provided, it will store a null value.
 /// If the payload is not a valid JSON string, it will be stored as a string.
-fn _setkey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
+fn _setkey(kvs: &mut DefaultKvs, mut args: Arguments) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Set Key");
 
@@ -325,7 +327,7 @@ fn _setkey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
 }
 
 /// Removes a key-value pair from the KVS.
-fn _removekey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
+fn _removekey(kvs: &mut DefaultKvs, mut args: Arguments) -> Result<(), ErrorCode> {
     println!("----------------------");
 
     let key: String = match args.opt_value_from_str("--key") {
@@ -349,7 +351,7 @@ fn _removekey(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
 
 /// Lists all keys in the KVS.
 /// It retrieves all keys and prints them to the console.
-fn _listkeys(kvs: Kvs) -> Result<(), ErrorCode> {
+fn _listkeys(kvs: &mut DefaultKvs) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("List Keys");
 
@@ -367,7 +369,7 @@ fn _listkeys(kvs: Kvs) -> Result<(), ErrorCode> {
 }
 
 /// Resets the KVS by removing all keys and values.
-fn _reset(kvs: Kvs) -> Result<(), ErrorCode> {
+fn _reset(kvs: &mut DefaultKvs) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Reset KVS");
     kvs.reset().map_err(|e| {
@@ -379,7 +381,7 @@ fn _reset(kvs: Kvs) -> Result<(), ErrorCode> {
 }
 
 /// Retrieves the snapshot count from the KVS.
-fn _snapshotcount(kvs: Kvs) -> Result<(), ErrorCode> {
+fn _snapshotcount(kvs: &mut DefaultKvs) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Snapshot Count");
     let count = kvs.snapshot_count();
@@ -392,7 +394,7 @@ fn _snapshotcount(kvs: Kvs) -> Result<(), ErrorCode> {
 fn _snapshotmaxcount() -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Snapshots Max Count");
-    let max = Kvs::snapshot_max_count();
+    let max = <DefaultKvs as KvsApi>::snapshot_max_count();
     println!("Snapshots Maximum Count: {}", max);
     println!("----------------------");
     Ok(())
@@ -400,7 +402,7 @@ fn _snapshotmaxcount() -> Result<(), ErrorCode> {
 
 /// Restores a snapshot in the KVS.
 /// It takes a snapshot ID as an argument and restores the KVS to that snapshot.
-fn _snapshotrestore(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
+fn _snapshotrestore(kvs: &mut DefaultKvs, mut args: Arguments) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Snapshot Restore");
 
@@ -425,7 +427,7 @@ fn _snapshotrestore(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
 }
 
 /// Retrieves the KVS filename for a given snapshot ID.
-fn _getkvsfilename(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
+fn _getkvsfilename(kvs: &mut DefaultKvs, mut args: Arguments) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Get KVS Filename");
     let snapshot_id: u32 = match args.opt_value_from_str("--snapshotid") {
@@ -446,7 +448,7 @@ fn _getkvsfilename(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
 }
 
 /// Retrieves the hash filename for a given snapshot ID.
-fn _gethashfilename(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
+fn _gethashfilename(kvs: &mut DefaultKvs, mut args: Arguments) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Get Hash Filename");
 
@@ -468,7 +470,7 @@ fn _gethashfilename(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
 }
 
 /// Creates test data in the KVS based on the example code from the KVS.
-fn _createtestdata(kvs: Kvs) -> Result<(), ErrorCode> {
+fn _createtestdata(kvs: &mut DefaultKvs) -> Result<(), ErrorCode> {
     println!("----------------------");
     println!("Create Test Data");
 
@@ -529,12 +531,8 @@ fn _createtestdata(kvs: Kvs) -> Result<(), ErrorCode> {
 /// Main function to run the KVS tool command line interface.
 fn main() -> Result<(), ErrorCode> {
     let mut args = Arguments::from_env();
-
-    let builder = KvsBuilder::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false);
-
-    let kvs = match builder.build() {
+    let builder = DefaultKvsBuilder::new(InstanceId::new(0));
+    let mut kvs = match builder.build() {
         Ok(kvs) => kvs,
         Err(e) => {
             eprintln!("Error opening KVS: {:?}", e);
@@ -646,27 +644,27 @@ fn main() -> Result<(), ErrorCode> {
 
     match op_mode {
         OperationMode::GetKey => {
-            _getkey(kvs, args)?;
+            _getkey(&mut kvs, args)?;
             Ok(())
         }
         OperationMode::SetKey => {
-            _setkey(kvs, args)?;
+            _setkey(&mut kvs, args)?;
             Ok(())
         }
         OperationMode::RemoveKey => {
-            _removekey(kvs, args)?;
+            _removekey(&mut kvs, args)?;
             Ok(())
         }
         OperationMode::ListKeys => {
-            _listkeys(kvs)?;
+            _listkeys(&mut kvs)?;
             Ok(())
         }
         OperationMode::Reset => {
-            _reset(kvs)?;
+            _reset(&mut kvs)?;
             Ok(())
         }
         OperationMode::SnapshotCount => {
-            _snapshotcount(kvs)?;
+            _snapshotcount(&mut kvs)?;
             Ok(())
         }
         OperationMode::SnapshotMaxCount => {
@@ -674,19 +672,19 @@ fn main() -> Result<(), ErrorCode> {
             Ok(())
         }
         OperationMode::SnapshotRestore => {
-            _snapshotrestore(kvs, args)?;
+            _snapshotrestore(&mut kvs, args)?;
             Ok(())
         }
         OperationMode::GetKvsFilename => {
-            _getkvsfilename(kvs, args)?;
+            _getkvsfilename(&mut kvs, args)?;
             Ok(())
         }
         OperationMode::GetHashFilename => {
-            _gethashfilename(kvs, args)?;
+            _gethashfilename(&mut kvs, args)?;
             Ok(())
         }
         OperationMode::CreateTestData => {
-            _createtestdata(kvs)?;
+            _createtestdata(&mut kvs)?;
             Ok(())
         }
         OperationMode::Invalid => {

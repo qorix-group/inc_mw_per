@@ -9,7 +9,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-
 /// Runtime Error Codes
 #[derive(Debug, PartialEq)]
 pub enum ErrorCode {

@@ -9,8 +9,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::kvs::{Kvs,InstanceId};
 use crate::error_code::ErrorCode;
+use crate::kvs::{InstanceId, Kvs};
 use crate::kvs_api::KvsApi;
 
 /// Key-value-storage builder
@@ -30,7 +30,6 @@ pub struct KvsBuilder<T: KvsApi = Kvs> {
     /// Phantom data for drop check
     _phantom: std::marker::PhantomData<T>,
 }
-
 
 impl<T> KvsBuilder<T>
 where
@@ -74,13 +73,13 @@ where
         self
     }
 
-	/// Set the key-value-storage permanent storage directory.
-	///
-	/// # Parameters
-	///   * `dir`: Path to permanent storage
-	///
-	/// # Return Values
-	///   * KvsBuilder instance with the directory set.
+    /// Set the key-value-storage permanent storage directory.
+    ///
+    /// # Parameters
+    ///   * `dir`: Path to permanent storage
+    ///
+    /// # Return Values
+    ///   * KvsBuilder instance with the directory set.
     pub fn dir<P: Into<String>>(mut self, dir: P) -> Self {
         self.dir = Some(dir.into());
         self
@@ -125,26 +124,66 @@ mod tests {
             _need_defaults: crate::kvs::OpenNeedDefaults,
             _need_kvs: crate::kvs::OpenNeedKvs,
             _dir: Option<String>,
-        ) -> Result<Self, ErrorCode> where Self: Sized { Ok(MockKvs) }
-        fn reset(&mut self) -> Result<(), ErrorCode> { Ok(()) }
-        fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> { Ok(vec![]) }
-        fn key_exists(&self, _key: &str) -> Result<bool, ErrorCode> { Ok(false) }
+        ) -> Result<Self, ErrorCode>
+        where
+            Self: Sized,
+        {
+            Ok(MockKvs)
+        }
+        fn reset(&mut self) -> Result<(), ErrorCode> {
+            Ok(())
+        }
+        fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> {
+            Ok(vec![])
+        }
+        fn key_exists(&self, _key: &str) -> Result<bool, ErrorCode> {
+            Ok(false)
+        }
         fn get_value<T>(&self, _key: &str) -> Result<T, ErrorCode>
         where
             for<'a> T: TryFrom<&'a crate::kvs_value::KvsValue> + Clone,
             for<'a> <T as TryFrom<&'a crate::kvs_value::KvsValue>>::Error: std::fmt::Debug,
-        { Err(ErrorCode::KeyNotFound) }
-        fn get_default_value(&self, _key: &str) -> Result<crate::kvs_value::KvsValue, ErrorCode> { Err(ErrorCode::KeyNotFound) }
-        fn is_value_default(&self, _key: &str) -> Result<bool, ErrorCode> { Ok(false) }
-        fn set_value<S: Into<String>, J: Into<crate::kvs_value::KvsValue>>(&mut self, _key: S, _value: J) -> Result<(), ErrorCode> { Ok(()) }
-        fn remove_key(&mut self, _key: &str) -> Result<(), ErrorCode> { Ok(()) }
+        {
+            Err(ErrorCode::KeyNotFound)
+        }
+        fn get_default_value(&self, _key: &str) -> Result<crate::kvs_value::KvsValue, ErrorCode> {
+            Err(ErrorCode::KeyNotFound)
+        }
+        fn is_value_default(&self, _key: &str) -> Result<bool, ErrorCode> {
+            Ok(false)
+        }
+        fn set_value<S: Into<String>, J: Into<crate::kvs_value::KvsValue>>(
+            &mut self,
+            _key: S,
+            _value: J,
+        ) -> Result<(), ErrorCode> {
+            Ok(())
+        }
+        fn remove_key(&mut self, _key: &str) -> Result<(), ErrorCode> {
+            Ok(())
+        }
         fn flush_on_exit(&mut self, _flush_on_exit: bool) {}
-        fn flush(&mut self) -> Result<(), ErrorCode> { Ok(()) }
-        fn snapshot_count(&self) -> usize { 0 }
-        fn snapshot_max_count() -> usize where Self: Sized { 0 }
-        fn snapshot_restore(&mut self, _id: crate::kvs::SnapshotId) -> Result<(), ErrorCode> { Ok(()) }
-        fn get_kvs_filename(&self, _id: crate::kvs::SnapshotId) -> String { String::new() }
-        fn get_hash_filename(&self, _id: crate::kvs::SnapshotId) -> String { String::new() }
+        fn flush(&mut self) -> Result<(), ErrorCode> {
+            Ok(())
+        }
+        fn snapshot_count(&self) -> usize {
+            0
+        }
+        fn snapshot_max_count() -> usize
+        where
+            Self: Sized,
+        {
+            0
+        }
+        fn snapshot_restore(&mut self, _id: crate::kvs::SnapshotId) -> Result<(), ErrorCode> {
+            Ok(())
+        }
+        fn get_kvs_filename(&self, _id: crate::kvs::SnapshotId) -> String {
+            String::new()
+        }
+        fn get_hash_filename(&self, _id: crate::kvs::SnapshotId) -> String {
+            String::new()
+        }
     }
 
     #[must_use]
@@ -159,7 +198,10 @@ mod tests {
         let instance_id = InstanceId::new(0);
         let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).dir(test_dir().1);
         let result = builder.build();
-        assert!(result.is_ok(), "KvsBuilder<MockKvs> should build successfully");
+        assert!(
+            result.is_ok(),
+            "KvsBuilder<MockKvs> should build successfully"
+        );
         let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).require_defaults();
         assert!(builder.require_defaults);
         let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).require_existing_kvs();
@@ -170,8 +212,7 @@ mod tests {
     // Test that require_defaults is false by default
     fn test_no_require_defaults() {
         let instance_id = InstanceId::new(0);
-        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone())
-            .dir(test_dir().1);
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).dir(test_dir().1);
         assert!(!builder.require_defaults);
     }
 
@@ -179,8 +220,7 @@ mod tests {
     // Test that require_kvs is false by default
     fn test_no_require_existing_kvs() {
         let instance_id = InstanceId::new(0);
-        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone())
-            .dir(test_dir().1);
+        let builder = KvsBuilder::<MockKvs>::new(instance_id.clone()).dir(test_dir().1);
         assert!(!builder.require_kvs);
     }
 
@@ -232,7 +272,6 @@ mod tests {
             .dir(temp_dir.1.clone())
             .build()
             .unwrap();
-
     }
 
     #[test]
@@ -265,6 +304,4 @@ mod tests {
         assert!(builder.require_kvs);
         assert_eq!(builder.dir.as_deref(), Some(dir_path));
     }
-
-
 }

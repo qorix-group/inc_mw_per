@@ -11,7 +11,7 @@
 
 //! # Common Testcase Functionality
 
-use rust_kvs::ErrorCode;
+use rust_kvs::error_code::ErrorCode;
 use std::time::SystemTime;
 use std::{
     fmt,

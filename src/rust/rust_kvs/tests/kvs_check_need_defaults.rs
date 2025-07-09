@@ -9,22 +9,24 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-//! # Verify File Check for non-existing KVS File
+//! # Verify File Check for non-existing Defaults File
 
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsBuilder};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, Kvs};
+use rust_kvs::kvs_builder::KvsBuilder;
 
 mod common;
 use crate::common::TempDir;
 
-/// Start with no KVS and check if the `need_kvs` flag is working
+/// Start with no KVS and check if the `need_defaults` flag is working
 #[test]
-fn kvs_check_needs_kvs() -> Result<(), ErrorCode> {
+fn kvs_check_needs_defaults() -> Result<(), ErrorCode> {
     let dir = TempDir::create()?;
     dir.set_current_dir()?;
 
     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
+        .require_defaults()
+        .require_existing_kvs()
         .build();
 
     assert_eq!(kvs.err(), Some(ErrorCode::KvsFileReadError));

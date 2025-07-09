@@ -11,7 +11,11 @@
 
 //! # Verify KVS Default Value Functionality
 
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, Kvs};
+use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_builder::KvsBuilder;
+use rust_kvs::kvs_value::KvsValue;
 use std::collections::HashMap;
 use tinyjson::{JsonGenerator, JsonValue};
 
@@ -47,9 +51,8 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     std::fs::write("kvs_0_default.json", &data)?;
 
     // create KVS
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(true)
-        .need_kvs(false)
+    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
+        .require_defaults()
         .build()?;
 
     kvs.set_value("number2", 345.0)?;
@@ -84,8 +87,7 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     drop(kvs);
 
     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
+        .require_existing_kvs()
         .build()?;
 
     assert!(kvs.get_value::<bool>("bool1")?);
@@ -114,8 +116,7 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     std::fs::write("kvs_0_default.json", &data)?;
 
     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
+        .require_existing_kvs()
         .build()?;
 
     assert_eq!(kvs.get_value::<f64>("number1")?, 987.0);

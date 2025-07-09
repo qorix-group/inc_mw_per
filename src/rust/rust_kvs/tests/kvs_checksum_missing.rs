@@ -11,7 +11,11 @@
 
 //! # Verify KVS Open with missing Checksum
 
-use rust_kvs::{ErrorCode, InstanceId, Kvs, KvsApi, KvsBuilder, KvsValue, SnapshotId};
+use rust_kvs::error_code::ErrorCode;
+use rust_kvs::kvs::{InstanceId, Kvs, SnapshotId};
+use rust_kvs::kvs_api::KvsApi;
+use rust_kvs::kvs_builder::KvsBuilder;
+use rust_kvs::kvs_value::KvsValue;
 
 mod common;
 use crate::common::TempDir;
@@ -22,10 +26,15 @@ fn kvs_checksum_missing() -> Result<(), ErrorCode> {
     let dir = TempDir::create()?;
     dir.set_current_dir()?;
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
+    // Also create a default file for completeness
+    let default_json = r#"{
+  "string1": "Hello",
+  "bool1": false,
+  "number1": 987
+}"#;
+    std::fs::write("kvs_0_default.json", default_json)?;
+
+    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0)).build()?;
 
     kvs.set_value("number", 123.0)?;
     kvs.set_value("bool", true)?;
@@ -51,8 +60,7 @@ fn kvs_checksum_missing() -> Result<(), ErrorCode> {
 
     // opening must fail because of the missing checksum file
     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
+        .require_existing_kvs()
         .build();
 
     assert_eq!(kvs.err(), Some(ErrorCode::KvsHashFileReadError));

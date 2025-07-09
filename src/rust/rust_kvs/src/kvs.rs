@@ -13,26 +13,21 @@ extern crate alloc;
 
 //core and alloc libs
 use alloc::string::FromUtf8Error;
-use core::fmt;
 use core::array::TryFromSliceError;
-
+use core::fmt;
 
 //std dependencies
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{self, AtomicBool};
 
-
-
 //external crates
 use adler32::RollingAdler32;
 
-use crate::kvs_value::{KvsValue, KvsMap};
-use crate::kvs_api::KvsApi;
 use crate::error_code::ErrorCode;
-use crate::kvs_backend::{PersistKvs, DefaultPersistKvs};
-
-
+use crate::kvs_api::KvsApi;
+use crate::kvs_backend::{DefaultPersistKvs, PersistKvs};
+use crate::kvs_value::{KvsMap, KvsValue};
 
 /// Maximum number of snapshots
 ///
@@ -45,7 +40,6 @@ pub struct InstanceId(usize);
 
 /// Snapshot ID
 pub struct SnapshotId(usize);
-
 
 impl fmt::Display for InstanceId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -72,7 +66,6 @@ impl SnapshotId {
         SnapshotId(id)
     }
 }
-
 
 /// Verify-Hash flag
 #[derive(PartialEq)]
@@ -104,7 +97,6 @@ pub struct Kvs<J: PersistKvs = DefaultPersistKvs> {
 
     _backend: std::marker::PhantomData<J>,
 }
-
 
 /// Need-Defaults flag
 pub enum OpenNeedDefaults {
@@ -172,8 +164,6 @@ impl From<OpenNeedKvs> for OpenJsonNeedFile {
     }
 }
 
-
-
 impl From<std::io::Error> for ErrorCode {
     fn from(cause: std::io::Error) -> Self {
         let kind = cause.kind();
@@ -208,21 +198,33 @@ impl From<Vec<u8>> for ErrorCode {
     }
 }
 
-
 impl<J: PersistKvs + Default> Kvs<J> {
     /// Open and parse a file using the backend, optionally with hash checking
-    fn open_kvs<T>(filename: &str, need_file: T, verify_hash: OpenJsonVerifyHash, hash_filename: &str) -> Result<KvsMap, ErrorCode>
+    fn open_kvs<T>(
+        filename: &str,
+        need_file: T,
+        verify_hash: OpenJsonVerifyHash,
+        hash_filename: &str,
+    ) -> Result<KvsMap, ErrorCode>
     where
         T: Into<OpenJsonNeedFile>,
     {
         use std::fs;
         use std::path::Path;
-        if verify_hash == OpenJsonVerifyHash::Yes && Path::new(filename).exists() && Path::new(hash_filename).exists() {
+        if verify_hash == OpenJsonVerifyHash::Yes
+            && Path::new(filename).exists()
+            && Path::new(hash_filename).exists()
+        {
             let buf = fs::read(filename)?;
             let hash = adler32::RollingAdler32::from_buffer(&buf).hash();
             let hash_bytes = fs::read(hash_filename)?;
             if hash_bytes.len() == 4 {
-                let file_hash = u32::from_be_bytes([hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3]]);
+                let file_hash = u32::from_be_bytes([
+                    hash_bytes[0],
+                    hash_bytes[1],
+                    hash_bytes[2],
+                    hash_bytes[3],
+                ]);
                 if hash != file_hash {
                     eprintln!("error: hash mismatch for {filename}");
                     return Err(ErrorCode::ValidationFailed);
@@ -236,11 +238,10 @@ impl<J: PersistKvs + Default> Kvs<J> {
         match J::get_kvs_from_file(filename, &mut KvsMap::new()) {
             Ok(()) => {
                 let mut map = KvsMap::new();
-                J::get_kvs_from_file(filename, &mut map)
-                    .map_err(|e| {
-                        eprintln!("error: {e}");
-                        ErrorCode::JsonParserError
-                    })?;
+                J::get_kvs_from_file(filename, &mut map).map_err(|e| {
+                    eprintln!("error: {e}");
+                    ErrorCode::JsonParserError
+                })?;
                 Ok(map)
             }
             Err(e) => {
@@ -334,10 +335,12 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
             use std::path::Path;
             if !Path::new(&format!("{filename_prefix}_0.json")).exists() {
                 // Persist empty map to create the file
-                let _ = J::persist_kvs_to_file(&KvsMap::new(), &format!("{filename_prefix}_0.json"));
+                let _ =
+                    J::persist_kvs_to_file(&KvsMap::new(), &format!("{filename_prefix}_0.json"));
             }
         }
-        let default = Kvs::<J>::open_kvs(&filename_default, need_defaults, OpenJsonVerifyHash::No, "")?;
+        let default =
+            Kvs::<J>::open_kvs(&filename_default, need_defaults, OpenJsonVerifyHash::No, "")?;
         // Use hash checking for the main KVS file
         let kvs = Kvs::<J>::open_kvs(
             &filename_kvs,
@@ -539,11 +542,10 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     ///   * `ErrorCode::UnmappedError`: Unmapped error
     fn flush(&mut self) -> Result<(), ErrorCode> {
         let map: KvsMap = self.kvs.clone();
-        J::persist_kvs_to_file(&map, &format!("{}_0.json", self.filename_prefix))
-            .map_err(|e| {
-                eprintln!("persist error: {e}");
-                ErrorCode::JsonParserError
-            })?;
+        J::persist_kvs_to_file(&map, &format!("{}_0.json", self.filename_prefix)).map_err(|e| {
+            eprintln!("persist error: {e}");
+            ErrorCode::JsonParserError
+        })?;
         let buf = std::fs::read(format!("{}_0.json", self.filename_prefix))?;
         let hash = RollingAdler32::from_buffer(&buf).hash();
         let filename_hash = format!("{}_0.hash", self.filename_prefix);
@@ -647,25 +649,25 @@ impl<J: PersistKvs + Default> KvsApi for Kvs<J> {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kvs_backend::{KvsBackendError, PersistKvs};
     use crate::kvs_value::KvsMap;
-    use crate::kvs_backend::{PersistKvs, KvsBackendError};
     use std::sync::atomic::AtomicBool;
 
     #[derive(Default)]
     struct MockPersistKvs;
     impl PersistKvs for MockPersistKvs {
-        fn get_kvs_from_file(filename: &str, kvs: &mut KvsMap) -> Result<(), KvsBackendError> {
+        fn get_kvs_from_file(filename: &str, _kvs: &mut KvsMap) -> Result<(), KvsBackendError> {
             // If file exists, simulate reading by doing nothing
             if std::path::Path::new(filename).exists() {
                 Ok(())
             } else {
                 // Simulate file not found
-                Err(KvsBackendError::Io(std::io::Error::from(std::io::ErrorKind::NotFound)))
+                Err(KvsBackendError::Io(std::io::Error::from(
+                    std::io::ErrorKind::NotFound,
+                )))
             }
         }
         fn persist_kvs_to_file(_kvs: &KvsMap, filename: &str) -> Result<(), KvsBackendError> {
@@ -755,9 +757,15 @@ mod tests {
     fn test_snapshot_restore_invalid() {
         let mut kvs = new_test_kvs();
         // id 0 is invalid
-        assert!(matches!(kvs.snapshot_restore(crate::kvs::SnapshotId(0)), Err(ErrorCode::InvalidSnapshotId)));
+        assert!(matches!(
+            kvs.snapshot_restore(crate::kvs::SnapshotId(0)),
+            Err(ErrorCode::InvalidSnapshotId)
+        ));
         // id > snapshot_count is invalid
-        assert!(matches!(kvs.snapshot_restore(crate::kvs::SnapshotId(1)), Err(ErrorCode::InvalidSnapshotId)));
+        assert!(matches!(
+            kvs.snapshot_restore(crate::kvs::SnapshotId(1)),
+            Err(ErrorCode::InvalidSnapshotId)
+        ));
     }
     #[test]
     fn test_get_kvs_and_hash_filename() {
@@ -783,11 +791,11 @@ mod tests {
         kvs.set_value("u64", 123456789u64).unwrap();
         assert_eq!(kvs.get_value::<u64>("u64").unwrap(), 123456789);
         // f64
-        kvs.set_value("f64", 3.1415f64).unwrap();
-        assert!((kvs.get_value::<f64>("f64").unwrap() - 3.1415).abs() < 1e-10);
+        kvs.set_value("f64", std::f64::consts::PI).unwrap();
+        assert!((kvs.get_value::<f64>("f64").unwrap() - std::f64::consts::PI).abs() < 1e-10);
         // bool
         kvs.set_value("bool", true).unwrap();
-        assert_eq!(kvs.get_value::<bool>("bool").unwrap(), true);
+        assert!(kvs.get_value::<bool>("bool").unwrap());
         // String
         kvs.set_value("string", "hello").unwrap();
         assert_eq!(kvs.get_value::<String>("string").unwrap(), "hello");
@@ -804,7 +812,16 @@ mod tests {
         let mut map = std::collections::HashMap::new();
         map.insert("a".to_string(), KvsValue::from(1i32));
         kvs.set_value("object", map.clone()).unwrap();
-        let map_got = kvs.get_value::<std::collections::HashMap<String, KvsValue>>("object").unwrap();
+        let map_got = kvs
+            .get_value::<std::collections::HashMap<String, KvsValue>>("object")
+            .unwrap();
         assert!(map_got == map);
+    }
+    #[test]
+    fn test_snapshot_rotate() {
+        let kvs = new_test_kvs();
+        // Should not error, even if no files exist (MockPersistKvs simulates no IO errors for NotFound)
+        let result = kvs.snapshot_rotate();
+        assert!(result.is_ok());
     }
 }

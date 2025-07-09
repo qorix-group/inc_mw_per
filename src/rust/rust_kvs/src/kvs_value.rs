@@ -9,8 +9,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-
-
 /// Key-value-storage value
 #[derive(Clone, Debug, PartialEq)]
 pub enum KvsValue {
@@ -219,6 +217,15 @@ impl<'a> TryFrom<&'a KvsValue> for std::collections::HashMap<String, KvsValue> {
         match value {
             KvsValue::Object(map) => Ok(map.clone()),
             _ => Err("KvsValue is not an Object"),
+        }
+    }
+}
+impl<'a> TryFrom<&'a KvsValue> for () {
+    type Error = &'static str;
+    fn try_from(value: &'a KvsValue) -> Result<Self, Self::Error> {
+        match value {
+            KvsValue::Null => Ok(()),
+            _ => Err("KvsValue is not Null (unit type)"),
         }
     }
 }

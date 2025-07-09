@@ -2,7 +2,6 @@ use crate::kvs_value::{KvsMap, KvsValue};
 
 use crate::error_code::ErrorCode;
 
-
 use crate::json_backend::json_value::{KvsJson, TinyJson};
 
 use std::fs;
@@ -54,10 +53,8 @@ pub struct DefaultPersistKvs<J: KvsJson = TinyJson> {
 
 impl<J: KvsJson> PersistKvs for DefaultPersistKvs<J> {
     fn get_kvs_from_file(filename: &str, kvs: &mut KvsMap) -> Result<(), KvsBackendError> {
-        let data = fs::read_to_string(filename)
-            .map_err(KvsBackendError::from)?;
-        let json_val = J::parse(&data)
-            .map_err(|e| KvsBackendError::Json(e.to_string()))?;
+        let data = fs::read_to_string(filename).map_err(KvsBackendError::from)?;
+        let json_val = J::parse(&data).map_err(|e| KvsBackendError::Json(e.to_string()))?;
         let kvs_val = J::to_kvs_value(json_val);
         if let KvsValue::Object(map) = kvs_val {
             kvs.clear();
@@ -71,10 +68,8 @@ impl<J: KvsJson> PersistKvs for DefaultPersistKvs<J> {
     fn persist_kvs_to_file(kvs: &KvsMap, filename: &str) -> Result<(), KvsBackendError> {
         let kvs_val = KvsValue::Object(kvs.clone());
         let json_val = J::from_kvs_value(&kvs_val);
-        let json_str = J::stringify(&json_val)
-            .map_err(|e| KvsBackendError::Json(e.to_string()))?;
-        fs::write(filename, json_str)
-            .map_err(KvsBackendError::from)?;
+        let json_str = J::stringify(&json_val).map_err(|e| KvsBackendError::Json(e.to_string()))?;
+        fs::write(filename, json_str).map_err(KvsBackendError::from)?;
         Ok(())
     }
 }
