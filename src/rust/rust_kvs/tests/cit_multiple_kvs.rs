@@ -24,16 +24,16 @@ fn cit_persistency_multiple_instances() -> Result<(), ErrorCode> {
         // Create first KVS instance.
         let kvs1 = Kvs::open(
             InstanceId::new(0),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // Create second KVS instance.
         let kvs2 = Kvs::open(
             InstanceId::new(1),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         // Set values to both KVS instances.
@@ -46,15 +46,15 @@ fn cit_persistency_multiple_instances() -> Result<(), ErrorCode> {
         // Second KVS run.
         let kvs1 = Kvs::open(
             InstanceId::new(0),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         let kvs2 = Kvs::open(
             InstanceId::new(1),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         // Compare values, ensure they are not mixed up.
@@ -107,16 +107,16 @@ fn cit_persistency_multiple_instances_same_id_common_value() -> Result<(), Error
         // Create first KVS instance.
         let kvs1 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // Create second KVS instance.
         let kvs2 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         // Set values to both KVS instances.
@@ -129,15 +129,15 @@ fn cit_persistency_multiple_instances_same_id_common_value() -> Result<(), Error
         // Second KVS run.
         let kvs1 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         let kvs2 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         assert_eq!(
@@ -178,16 +178,16 @@ fn cit_persistency_multiple_instances_same_id_interfere() -> Result<(), ErrorCod
         // Create first KVS instance.
         let kvs1 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // Create second KVS instance.
         let kvs2 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         // Set values to both KVS instances.
@@ -200,15 +200,15 @@ fn cit_persistency_multiple_instances_same_id_interfere() -> Result<(), ErrorCod
         // Second KVS run.
         let kvs1 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         let kvs2 = Kvs::open(
             instance_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         // Change value in first KVS instance.

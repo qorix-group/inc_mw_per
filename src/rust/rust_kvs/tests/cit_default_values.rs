@@ -55,16 +55,16 @@ fn cit_persistency_default_values() -> Result<(), ErrorCode> {
         // KVS instance with defaults.
         let kvs_with_defaults = Kvs::open(
             default_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Required,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // KVS instance without defaults.
         let kvs_without_defaults = Kvs::open(
             non_default_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // Check defaults.
         assert!(
@@ -113,16 +113,16 @@ fn cit_persistency_default_values() -> Result<(), ErrorCode> {
         // KVS instance with defaults.
         let kvs_with_defaults = Kvs::open(
             default_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Required,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // KVS instance without defaults.
         let kvs_without_defaults = Kvs::open(
             non_default_id.clone(),
-            dir_path.clone(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // Check that the value is still non-default.
         assert_eq!(
@@ -169,9 +169,9 @@ fn cit_persistency_default_values_optional() -> Result<(), ErrorCode> {
         // (should load defaults).
         let kvs_optional_defaults = Kvs::open(
             default_id.clone(),
-            dir_path.to_path_buf(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         // Check defaults.
@@ -216,9 +216,9 @@ fn cit_persistency_defaults_enabled_values_removal() -> Result<(), ErrorCode> {
         // KVS instance with defaults.
         let kvs_with_defaults = Kvs::open(
             default_id.clone(),
-            dir_path.to_path_buf(),
             OpenNeedDefaults::Required,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // Check default value.
         assert_eq!(
@@ -273,9 +273,9 @@ fn cit_persistency_defaults_disabled_values_removal() -> Result<(), ErrorCode> {
         // KVS instance with defaults.
         let kvs_without_defaults = Kvs::open(
             InstanceId::new(0),
-            dir_path.to_path_buf(),
             OpenNeedDefaults::Optional,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
         // Set non-default value and check it.
         kvs_without_defaults.set_value(&keyname, non_default_value)?;
@@ -316,9 +316,9 @@ fn cit_persistency_invalid_default_values() -> Result<(), ErrorCode> {
     // Assertions: opening should fail due to invalid JSON
     let kvs = Kvs::open(
         default_id.clone(),
-        dir_path.to_path_buf(),
         OpenNeedDefaults::Required,
         OpenNeedKvs::Optional,
+        Some(dir_path.to_string_lossy().to_string()),
     );
     assert!(
         kvs.is_err(),
@@ -356,9 +356,9 @@ fn cit_persistency_reset_all_default_values() -> Result<(), ErrorCode> {
         // KVS instance with defaults.
         let kvs_with_defaults = Kvs::open(
             default_id.clone(),
-            dir_path.to_path_buf(),
             OpenNeedDefaults::Required,
             OpenNeedKvs::Optional,
+            Some(dir_path.to_string_lossy().to_string()),
         )?;
 
         // Check defaults.
