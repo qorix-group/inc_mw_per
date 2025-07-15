@@ -677,14 +677,6 @@ mod tests {
         );
     }
 
-    impl<'a> TryFrom<&'a KvsValue> for u64 {
-        type Error = ErrorCode;
-
-        fn try_from(_val: &'a KvsValue) -> Result<u64, Self::Error> {
-            Err(ErrorCode::ConversionFailed)
-        }
-    }
-
     #[test]
     fn test_kvs_open_and_set_get_value() {
         let dir = tempdir().unwrap();
@@ -716,7 +708,7 @@ mod tests {
             Some(dir_path.clone()),
         )
         .unwrap();
-        let _ = kvs.set_value("reset", KvsValue::Number(1.0));
+        let _ = kvs.set_value("reset", 1.0);
         assert!(kvs.get_value("reset").is_ok());
         kvs.reset().unwrap();
         assert!(matches!(
@@ -758,7 +750,7 @@ mod tests {
             Some(dir_path.clone()),
         )
         .unwrap();
-        let _ = kvs.set_value("bar", KvsValue::Number(2.0));
+        let _ = kvs.set_value("bar", 2.0);
         assert!(kvs.key_exists("bar").unwrap());
         kvs.remove_key("bar").unwrap();
         assert!(!kvs.key_exists("bar").unwrap());
@@ -777,7 +769,7 @@ mod tests {
             Some(dir_path.clone()),
         )
         .unwrap();
-        let _ = kvs.set_value("snap", KvsValue::Number(3.0));
+        let _ = kvs.set_value("snap", 3.0);
         // Before flush, snapshot count should be 0 (no snapshots yet)
         assert_eq!(kvs.snapshot_count(), 0);
         kvs.flush().unwrap();
