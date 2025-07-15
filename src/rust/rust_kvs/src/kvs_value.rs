@@ -113,8 +113,6 @@ impl From<KvsMap> for KvsValue {
     }
 }
 
-
-
 // Trait for extracting inner values from KvsValue
 pub trait KvsValueGet {
     fn get_inner_value(val: &KvsValue) -> Option<&Self>;
