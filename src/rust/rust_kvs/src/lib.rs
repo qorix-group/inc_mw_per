@@ -136,16 +136,21 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod error_code;
-mod json_backend;
 pub mod kvs;
 pub mod kvs_api;
 mod kvs_backend;
 pub mod kvs_builder;
 pub mod kvs_value;
 
+#[cfg(feature = "mock_backend")]
+mod mock_backend;
+
+#[cfg(feature = "json_backend")]
+mod json_backend;
+
 pub mod kvs_mock;
 
-pub type Kvs = kvs::GenericKvs<kvs_backend::DefaultPersistKvs>;
+pub type Kvs = kvs::GenericKvs;
 
 /// Prelude module for convenient imports
 pub mod prelude {
@@ -159,4 +164,10 @@ pub mod prelude {
     pub use crate::kvs_builder::KvsBuilder;
     pub use crate::kvs_value::KvsValue;
     pub use crate::Kvs;
+
+    #[cfg(all(feature = "mock_backend", not(feature = "json_backend")))]
+    pub use crate::mock_backend::MockBackend as DefaultKvsBackend;
+
+    #[cfg(all(feature = "json_backend", feature = "mock_backend"))]
+    pub use crate::json_backend::JsonBackend as DefaultKvsBackend;
 }
