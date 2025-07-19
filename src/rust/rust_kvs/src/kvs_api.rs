@@ -18,7 +18,7 @@ use crate::error_code::ErrorCode;
 use crate::kvs_value::KvsValue;
 
 /// Instance ID
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Ord, PartialOrd, Eq)]
 pub struct InstanceId(usize);
 
 /// Snapshot ID

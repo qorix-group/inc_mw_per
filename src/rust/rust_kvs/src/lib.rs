@@ -130,7 +130,6 @@
 //!     defines that `String` and `str` are always valid UTF-8.
 //!   * Feature `FEAT_REQ__KVS__supported_datatypes_values` is matched by using the same types that
 //!     the IPC will use for the Rust implementation.
-#![forbid(unsafe_code)]
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod error_code;

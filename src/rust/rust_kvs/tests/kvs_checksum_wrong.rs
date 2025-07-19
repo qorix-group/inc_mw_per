@@ -12,8 +12,10 @@
 //! # Verify KVS Open with wrong Checksum
 
 use rust_kvs::prelude::*;
+use std::collections::HashMap;
 use std::env::set_current_dir;
 use tempfile::tempdir;
+use tinyjson::JsonValue;
 
 /// Create a KVS, close it, modify checksum and try to reopen it.
 #[test]
@@ -21,31 +23,25 @@ fn kvs_checksum_wrong() -> Result<(), ErrorCode> {
     let dir = tempdir()?;
     set_current_dir(dir.path())?;
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
-
-    kvs.set_value("number", 123.0)?;
-    kvs.set_value("bool", true)?;
-    kvs.set_value("string", "Hello".to_string())?;
-    kvs.set_value("null", ())?;
-    kvs.set_value(
-        "array",
-        vec![
-            KvsValue::from(456.0),
-            false.into(),
-            "Bye".to_string().into(),
-        ],
-    )?;
-
-    kvs.flush()?;
+    let json = JsonValue::Object(HashMap::from([
+        ("number".to_string(), 123.0.into()),
+        ("bool".to_string(), true.into()),
+        ("string".to_string(), "Hello".to_string().into()),
+        ("null".to_string(), ().into()),
+        (
+            "array".to_string(),
+            vec![456.0.into(), false.into(), "Bye".to_string().into()].into(),
+        ),
+    ]));
+    let json_str = json.stringify().unwrap();
+    let json_path = dir.path().join("kvs_0_0.json");
+    std::fs::write(json_path, json_str)?;
 
     // remember hash filename
-    let hash_filename = kvs.get_hash_filename(SnapshotId::new(0))?;
+    let hash_path = dir.path().join("kvs_0_0.hash");
 
     // modify the checksum
-    std::fs::write(hash_filename, vec![0x12, 0x34, 0x56, 0x78])?;
+    std::fs::write(hash_path, vec![0x12, 0x34, 0x56, 0x78])?;
 
     // opening must fail because of the missing checksum file
     let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))

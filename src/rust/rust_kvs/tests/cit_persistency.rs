@@ -114,20 +114,9 @@ fn cit_persistency_flush_on_exit_disabled_drop_data() -> Result<(), ErrorCode> {
         }
     }
 
-    // Assertions.
-    {
-        // Second KVS run.
-        // KVS file is expected to not to exist.
-        let kvs = Kvs::open(
-            InstanceId::new(0),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path),
-        )?;
-
-        // Make sure no keys are defined.
-        assert!(kvs.get_all_keys()?.is_empty());
-    }
+    // Assert file is not filed - no flush happended.
+    let exp_json_path = dir.path().join("kvs_0_0.json");
+    assert!(!exp_json_path.exists());
 
     Ok(())
 }
@@ -192,6 +181,41 @@ fn cit_persistency_flush_on_exit_disabled_manual_flush() -> Result<(), ErrorCode
             assert!(compare_kvs_values(expected_value, &actual_value))
         }
     }
+
+    Ok(())
+}
+
+#[test]
+fn cit_persistency_multiple_instances_shared_data() -> Result<(), ErrorCode> {
+    // Temp directory.
+    let dir = tempdir()?;
+    let dir_path = dir.path().to_string_lossy().to_string();
+
+    // Initialize first KVS instance.
+    let kvs1 = Kvs::open(
+        InstanceId::new(0),
+        OpenNeedDefaults::Optional,
+        OpenNeedKvs::Optional,
+        Some(dir_path.clone()),
+    )?;
+    kvs1.flush_on_exit(false);
+    kvs1.set_value("k1", KvsValue::from("v1".to_string()))?;
+
+    // Initialize seconds KVS instance.
+    let kvs2 = Kvs::open(
+        InstanceId::new(0),
+        OpenNeedDefaults::Optional,
+        OpenNeedKvs::Optional,
+        Some(dir_path.clone()),
+    )?;
+    kvs2.flush_on_exit(false);
+    kvs2.set_value("k2", KvsValue::from("v2".to_string()))?;
+
+    // Assert data is shared between objects of same InstanceID.
+    assert_eq!(kvs1.get_value_as::<String>("k1")?, "v1".to_string());
+    assert_eq!(kvs1.get_value_as::<String>("k2")?, "v2".to_string());
+    assert_eq!(kvs2.get_value_as::<String>("k2")?, "v2".to_string());
+    assert_eq!(kvs2.get_value_as::<String>("k1")?, "v1".to_string());
 
     Ok(())
 }
