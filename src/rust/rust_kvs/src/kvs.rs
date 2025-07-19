@@ -10,17 +10,50 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //std dependencies
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{self, AtomicBool};
-use std::sync::Mutex;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::error_code::ErrorCode;
 use crate::kvs_api::{InstanceId, KvsApi, SnapshotId};
 use crate::kvs_api::{OpenNeedDefaults, OpenNeedKvs};
 use crate::kvs_backend::KvsBackend;
 use crate::kvs_value::{KvsMap, KvsValue};
+
+static mut KVS_POOL: LazyLock<Mutex<KvsPool>> = LazyLock::new(|| {
+    Mutex::new(KvsPool {
+        pool: Mutex::new(BTreeMap::new()),
+    })
+});
+
+/// Pool of KVS maps.
+struct KvsPool {
+    /// Pool of KVS maps.
+    pool: Mutex<BTreeMap<InstanceId, Arc<Mutex<KvsMap>>>>,
+}
+
+impl KvsPool {
+    /// Check instance of KVS map for given instance ID exists.
+    pub fn exists(&self, instance_id: &InstanceId) -> bool {
+        let pool = self.pool.lock().unwrap();
+        pool.contains_key(instance_id)
+    }
+
+    /// Insert instance of KVS map for given instance ID.
+    pub fn insert(&mut self, instance_id: &InstanceId, kvs_map: KvsMap) {
+        let mut pool = self.pool.lock().unwrap();
+        let map = Arc::new(Mutex::new(kvs_map));
+        pool.insert(instance_id.clone(), map);
+    }
+
+    /// Get instance of KVS map for given instance ID.
+    pub fn get(&mut self, instance_id: &InstanceId) -> Option<Arc<Mutex<KvsMap>>> {
+        let pool = self.pool.lock().unwrap();
+        pool.get(instance_id).cloned()
+    }
+}
 
 /// Maximum number of snapshots
 ///
@@ -32,7 +65,7 @@ pub struct GenericKvs<J: KvsBackend> {
     /// Storage data
     ///
     /// Feature: `FEAT_REQ__KVS__thread_safety` (Mutex)
-    kvs: Mutex<KvsMap>,
+    kvs: Arc<Mutex<KvsMap>>,
 
     /// Optional default values
     ///
@@ -99,7 +132,7 @@ impl<J: KvsBackend> GenericKvs<J> {
     ///   * `verify_hash`: content is verified against a hash file
     ///
     /// # Return Values
-    ///   * Ok: KVS data as `HashMap<String, KvsValue>`
+    ///   * Ok: KVS data as `KvsMap`
     ///   * `ErrorCode::ValidationFailed`: KVS hash validation failed
     ///   * `ErrorCode::JsonParserError`: JSON parser error (invalid JSON or type error)
     ///   * `ErrorCode::KvsFileReadError`: KVS file read error (I/O error)
@@ -221,18 +254,27 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
         // Use hash checking for the main KVS file
         let hash_path =
             filename_prefix.with_file_name(format!("{}_0.hash", filename_prefix.display()));
-        let kvs = GenericKvs::<J>::open_kvs(
-            &filename_kvs,
-            need_kvs,
-            OpenKvsVerifyHash::Yes,
-            Some(&hash_path),
-        )?;
+        #[allow(static_mut_refs)]
+        let kvs = unsafe {
+            let mut pool = KVS_POOL.lock().unwrap();
+            // If instance not initialized yet - load from file.
+            if !pool.exists(&instance_id) {
+                let kvs_map = GenericKvs::<J>::open_kvs(
+                    &filename_kvs,
+                    need_kvs,
+                    OpenKvsVerifyHash::Yes,
+                    Some(&hash_path),
+                )?;
+                pool.insert(&instance_id, kvs_map);
+            }
+            pool.get(&instance_id).unwrap()
+        };
 
         println!("opened KVS: instance '{instance_id}'");
         println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
 
         Ok(GenericKvs {
-            kvs: Mutex::new(kvs),
+            kvs,
             default,
             filename_prefix,
             flush_on_exit: AtomicBool::new(true),
@@ -255,7 +297,7 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * Ok: Reset of the KVS was successful
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn reset(&self) -> Result<(), ErrorCode> {
-        *self.kvs.lock()? = HashMap::new();
+        *self.kvs.lock()? = KvsMap::new();
         Ok(())
     }
 
