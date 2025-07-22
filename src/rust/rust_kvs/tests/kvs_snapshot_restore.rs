@@ -20,12 +20,10 @@ use tempfile::tempdir;
 fn kvs_snapshot_restore() -> Result<(), ErrorCode> {
     let dir = tempdir()?;
     set_current_dir(dir.path())?;
+    let kvs_provider = KvsProvider::new(None);
 
     let max_count = Kvs::snapshot_max_count();
-    let mut kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
+    let mut kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
 
     // we need a double zero here because after the first flush no snapshot is created
     // and the max count is also added twice to make sure we rotate once
@@ -42,15 +40,12 @@ fn kvs_snapshot_restore() -> Result<(), ErrorCode> {
 
         // drop the current instance with flush-on-exit enabled and re-open it
         drop(kvs);
-        kvs = KvsBuilder::new(InstanceId::new(0))
-            .need_defaults(false)
-            .need_kvs(true)
-            .build()?;
+        kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)).kvs_load(KvsLoad::Required))?;
     }
 
     // restore snapshots and check `counter` value
     for idx in 1..=max_count {
-        kvs.snapshot_restore(SnapshotId::new(idx))?;
+        kvs.snapshot_restore(&SnapshotId(idx))?;
         assert_eq!(kvs.get_value_as::<f64>("counter")?, (counter - idx) as f64);
     }
 

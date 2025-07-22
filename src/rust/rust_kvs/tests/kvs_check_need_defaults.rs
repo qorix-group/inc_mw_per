@@ -15,18 +15,20 @@ use rust_kvs::prelude::*;
 use std::env::set_current_dir;
 use tempfile::tempdir;
 
-/// Start with no KVS and check if the `need_defaults` flag is working
+/// Start with no KVS and check if the `defaults_mode` flag is working
 #[test]
 fn kvs_check_needs_defaults() -> Result<(), ErrorCode> {
     let dir = tempdir()?;
     set_current_dir(dir.path())?;
+    let kvs_provider = KvsProvider::new(None);
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(true)
-        .need_kvs(false)
-        .build();
+    let kvs = kvs_provider.get(
+        KvsParameters::new(InstanceId(0))
+            .defaults(Defaults::Required)
+            .kvs_load(KvsLoad::Optional),
+    );
 
-    assert_eq!(kvs.err(), Some(ErrorCode::KvsFileReadError));
+    assert_eq!(kvs.err(), Some(ErrorCode::FileNotFound));
 
     Ok(())
 }

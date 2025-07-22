@@ -2,10 +2,10 @@
 //!
 //! Requirements verified:
 //! - Supported Datatypes (Keys) (feat_req__persistency__support_datatype_keys)
-//! The KVS system shall support UTF-8 encoded strings as valid key types.
+//!   The KVS system shall support UTF-8 encoded strings as valid key types.
 //! - Supported Datatypes (Values) (feat_req__persistency__support_datatype_value)
-//! The KVS system shall support storing both primitive and non-primitive datatypes as values.
-//! The supported datatypes shall match those used by the IPC feature.
+//!   The KVS system shall support storing both primitive and non-primitive datatypes as values.
+//!   The supported datatypes shall match those used by the IPC feature.
 
 mod common;
 use common::compare_kvs_values;
@@ -18,14 +18,15 @@ fn cit_supported_datatypes_keys() -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
     let dir_path = dir.path().to_string_lossy().to_string();
+    let kvs_provider = KvsProvider::new(Some(dir_path));
 
-    let kvs: Kvs = KvsBuilder::new(InstanceId::new(0)).dir(dir_path).build()?;
+    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
     // `str` and `String` are guaranteed to be valid UTF-8.
     kvs.set_value("k1", ())?;
     kvs.set_value(String::from("k2"), ())?;
 
-    assert_eq!(kvs.get_value_as::<()>("k1")?, ());
-    assert_eq!(kvs.get_value_as::<()>("k2")?, ());
+    assert!(kvs.get_value_as::<()>("k1").is_ok());
+    assert!(kvs.get_value_as::<()>("k2").is_ok());
 
     Ok(())
 }
@@ -34,9 +35,10 @@ fn supported_datatypes_common_impl(data: HashMap<&str, KvsValue>) -> Result<(), 
     // Temp directory.
     let dir = tempdir()?;
     let dir_path = dir.path().to_string_lossy().to_string();
+    let kvs_provider = KvsProvider::new(Some(dir_path));
 
     // Initialize KVS and load data.
-    let kvs: Kvs = KvsBuilder::new(InstanceId::new(0)).dir(dir_path).build()?;
+    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
     for (k, v) in data.iter() {
         kvs.set_value(k.to_string(), v.clone())?;
     }

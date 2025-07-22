@@ -60,7 +60,9 @@
 //! use std::collections::HashMap;
 //!
 //! fn main() -> Result<(), ErrorCode> {
-//!     let kvs: Kvs = KvsBuilder::new(InstanceId::new(0)).dir("").build()?;
+//!     let kvs_params = KvsParameters::new(InstanceId(0)).flush_on_exit(FlushOnExit::No);
+//!     let kvs_provider = KvsProvider::new(Some("".into()));
+//!     let kvs = kvs_provider.get(kvs_params)?;
 //!
 //!     kvs.set_value("number", 123.0)?;
 //!     kvs.set_value("bool", true)?;
@@ -137,23 +139,21 @@ mod json_backend;
 pub mod kvs;
 pub mod kvs_api;
 mod kvs_backend;
-pub mod kvs_builder;
+pub mod kvs_provider;
 pub mod kvs_value;
 
 pub mod kvs_mock;
 
-pub type Kvs = kvs::GenericKvs<json_backend::JsonBackend>;
+use json_backend::JsonBackend;
+pub type KvsProvider = kvs_provider::GenericKvsProvider<JsonBackend>;
+pub type Kvs = kvs::GenericKvs<JsonBackend>;
 
 /// Prelude module for convenient imports
 pub mod prelude {
     pub use crate::error_code::ErrorCode;
     pub use crate::kvs::GenericKvs;
-    pub use crate::kvs_api::InstanceId;
-    pub use crate::kvs_api::KvsApi;
-    pub use crate::kvs_api::OpenNeedDefaults;
-    pub use crate::kvs_api::OpenNeedKvs;
-    pub use crate::kvs_api::SnapshotId;
-    pub use crate::kvs_builder::KvsBuilder;
-    pub use crate::kvs_value::KvsValue;
-    pub use crate::Kvs;
+    pub use crate::kvs_api::{Defaults, FlushOnExit, InstanceId, KvsApi, KvsLoad, SnapshotId};
+    pub use crate::kvs_provider::{GenericKvsProvider, KvsParameters};
+    pub use crate::kvs_value::{KvsMap, KvsValue};
+    pub use crate::{Kvs, KvsProvider};
 }

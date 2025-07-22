@@ -10,9 +10,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::error_code::ErrorCode;
-use crate::kvs_api::KvsApi;
-use crate::kvs_api::SnapshotId;
+use crate::kvs_api::{FlushOnExit, KvsApi, SnapshotId};
 use crate::kvs_value::{KvsMap, KvsValue};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -30,19 +30,17 @@ impl Default for MockKvs {
     }
 }
 
-impl KvsApi for MockKvs {
-    fn open(
-        _instance_id: crate::kvs_api::InstanceId,
-        _need_defaults: crate::kvs_api::OpenNeedDefaults,
-        _need_kvs: crate::kvs_api::OpenNeedKvs,
-        _dir: Option<String>,
-    ) -> Result<Self, ErrorCode> {
+impl MockKvs {
+    pub fn new() -> Result<Self, ErrorCode> {
         Ok(MockKvs {
             map: Arc::new(Mutex::new(KvsMap::new())),
             fail: false,
         })
     }
-    fn flush_on_exit(&self, _flush_on_exit: bool) {}
+}
+
+impl KvsApi for MockKvs {
+    fn flush_on_exit(&self, _flush_on_exit: FlushOnExit) {}
     fn reset(&self) -> Result<(), ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
@@ -129,19 +127,19 @@ impl KvsApi for MockKvs {
     fn snapshot_max_count() -> usize {
         0
     }
-    fn snapshot_restore(&self, _id: SnapshotId) -> Result<(), ErrorCode> {
+    fn snapshot_restore(&self, _snapshot_id: &SnapshotId) -> Result<(), ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
         Ok(())
     }
-    fn get_kvs_filename(&self, _id: SnapshotId) -> Result<std::path::PathBuf, ErrorCode> {
+    fn get_kvs_file_path(&self, _snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
         Err(ErrorCode::FileNotFound)
     }
-    fn get_hash_filename(&self, _id: SnapshotId) -> Result<std::path::PathBuf, ErrorCode> {
+    fn get_hash_file_path(&self, _snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
@@ -185,8 +183,8 @@ mod tests {
         assert!(kvs_fail.reset().is_err());
         assert!(kvs_fail.get_default_value("a").is_err());
         assert!(kvs_fail.is_value_default("a").is_err());
-        assert!(kvs_fail.get_kvs_filename(SnapshotId::new(0)).is_err());
-        assert!(kvs_fail.get_hash_filename(SnapshotId::new(0)).is_err());
-        assert!(kvs_fail.snapshot_restore(SnapshotId::new(0)).is_err());
+        assert!(kvs_fail.get_kvs_file_path(&SnapshotId::new(0)).is_err());
+        assert!(kvs_fail.get_kvs_file_path(&SnapshotId::new(0)).is_err());
+        assert!(kvs_fail.snapshot_restore(&SnapshotId::new(0)).is_err());
     }
 }

@@ -21,11 +21,9 @@ use tempfile::tempdir;
 fn kvs_without_defaults() -> Result<(), ErrorCode> {
     let dir = tempdir()?;
     set_current_dir(dir.path())?;
+    let kvs_provider = KvsProvider::new(None);
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(false)
-        .build()?;
+    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)).kvs_load(KvsLoad::Optional))?;
 
     kvs.set_value("number", 123.0)?;
     kvs.set_value("bool", true)?;
@@ -60,10 +58,7 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     // drop the current instance with flush-on-exit enabled and reopen storage
     drop(kvs);
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
-        .build()?;
+    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)).kvs_load(KvsLoad::Required))?;
 
     assert_eq!(kvs.get_value_as::<f64>("number")?, 123.0);
     assert!(kvs.get_value_as::<bool>("bool")?);

@@ -19,7 +19,7 @@ use crate::kvs_value::KvsValue;
 
 /// Instance ID
 #[derive(Clone, Debug, PartialEq, Ord, PartialOrd, Eq)]
-pub struct InstanceId(usize);
+pub struct InstanceId(pub usize);
 
 /// Snapshot ID
 #[derive(Clone, Debug, PartialEq)]
@@ -51,54 +51,43 @@ impl SnapshotId {
     }
 }
 
-/// Need-Defaults flag
-pub enum OpenNeedDefaults {
-    /// Optional: Open defaults only if available
+/// Defaults handling mode.
+#[derive(PartialEq, Debug)]
+pub enum Defaults {
+    /// Defaults are not loaded.
+    Ignored,
+
+    /// Defaults are loaded if available.
     Optional,
 
-    /// Required: Defaults must be available
+    /// Defaults must be loaded.
     Required,
 }
 
-/// Need-KVS flag
-pub enum OpenNeedKvs {
-    /// Optional: Use an empty KVS if no KVS is available
+/// KVS load mode.
+#[derive(PartialEq, Debug)]
+pub enum KvsLoad {
+    /// KVS is not loaded, current shared state is used.
+    Ignored,
+
+    /// KVS is loaded if available.
     Optional,
 
-    /// Required: KVS must be already exist
+    /// KVS must be loaded.
     Required,
 }
 
-impl From<bool> for OpenNeedDefaults {
-    fn from(flag: bool) -> OpenNeedDefaults {
-        if flag {
-            OpenNeedDefaults::Required
-        } else {
-            OpenNeedDefaults::Optional
-        }
-    }
-}
+/// Flush on exit mode.
+#[derive(PartialEq, Debug)]
+pub enum FlushOnExit {
+    /// Do not flush on exit.
+    No,
 
-impl From<bool> for OpenNeedKvs {
-    fn from(flag: bool) -> OpenNeedKvs {
-        if flag {
-            OpenNeedKvs::Required
-        } else {
-            OpenNeedKvs::Optional
-        }
-    }
+    /// Flush on exit.
+    Yes,
 }
 
 pub trait KvsApi {
-    fn open(
-        instance_id: InstanceId,
-        need_defaults: OpenNeedDefaults,
-        need_kvs: OpenNeedKvs,
-        dir: Option<String>,
-    ) -> Result<Self, ErrorCode>
-    where
-        Self: Sized;
-
     fn reset(&self) -> Result<(), ErrorCode>;
     fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode>;
     fn key_exists(&self, key: &str) -> Result<bool, ErrorCode>;
@@ -115,13 +104,13 @@ pub trait KvsApi {
         value: J,
     ) -> Result<(), ErrorCode>;
     fn remove_key(&self, key: &str) -> Result<(), ErrorCode>;
-    fn flush_on_exit(&self, flush_on_exit: bool);
+    fn flush_on_exit(&self, flush_on_exit: FlushOnExit);
     fn flush(&self) -> Result<(), ErrorCode>;
     fn snapshot_count(&self) -> usize;
     fn snapshot_max_count() -> usize
     where
         Self: Sized;
-    fn snapshot_restore(&self, id: SnapshotId) -> Result<(), ErrorCode>;
-    fn get_kvs_filename(&self, id: SnapshotId) -> Result<PathBuf, ErrorCode>;
-    fn get_hash_filename(&self, id: SnapshotId) -> Result<PathBuf, ErrorCode>;
+    fn snapshot_restore(&self, snapshot_id: &SnapshotId) -> Result<(), ErrorCode>;
+    fn get_kvs_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode>;
+    fn get_hash_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode>;
 }

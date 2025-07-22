@@ -28,6 +28,7 @@ use tinyjson::{JsonGenerator, JsonValue};
 fn kvs_without_defaults() -> Result<(), ErrorCode> {
     let dir = tempdir()?;
     set_current_dir(dir.path())?;
+    let kvs_provider = KvsProvider::new(None);
 
     // create defaults file
     let defaults: HashMap<String, JsonValue> = HashMap::from([
@@ -45,10 +46,7 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     std::fs::write("kvs_0_default.json", &data)?;
 
     // create KVS
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(true)
-        .need_kvs(false)
-        .build()?;
+    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)).defaults(Defaults::Optional))?;
 
     kvs.set_value("number2", 345.0)?;
     kvs.set_value("bool2", false)?;
@@ -81,10 +79,7 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     // drop the current instance with flush-on-exit enabled and reopen storage
     drop(kvs);
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
-        .build()?;
+    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)).kvs_load(KvsLoad::Required))?;
 
     assert!(kvs.get_value_as::<bool>("bool1")?);
     assert!(!kvs.is_value_default("bool1")?);
@@ -113,10 +108,11 @@ fn kvs_without_defaults() -> Result<(), ErrorCode> {
     let data = String::from_utf8(buf)?;
     std::fs::write("kvs_0_default.json", &data)?;
 
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
-        .build()?;
+    let kvs = kvs_provider.get(
+        KvsParameters::new(InstanceId(0))
+            .defaults(Defaults::Optional)
+            .kvs_load(KvsLoad::Required),
+    )?;
 
     assert_eq!(kvs.get_value_as::<f64>("number1")?, 987.0);
     assert!(kvs.is_value_default("number1")?);

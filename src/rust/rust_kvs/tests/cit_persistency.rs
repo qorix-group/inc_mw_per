@@ -2,9 +2,9 @@
 //!
 //! Requirements verified:
 //! - Persistency (feat_req__persistency__persistency)
-//! The KVS system shall persist stored data and provide an API to explicitly trigger persistence.
+//!   The KVS system shall persist stored data and provide an API to explicitly trigger persistence.
 //! - Store persistent data (feat_req__persistency__persist_data)
-//! The KVS shall support storing and loading its data to and from persistent storage.
+//!   The KVS shall support storing and loading its data to and from persistent storage.
 
 mod common;
 use common::compare_kvs_values;
@@ -19,6 +19,7 @@ fn cit_persistency_flush_on_exit_enabled() -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
     let dir_path = dir.path().to_string_lossy().to_string();
+    let kvs_provider = KvsProvider::new(Some(dir_path));
 
     // Values of each type.
     let mut kv_values: HashMap<String, KvsValue> = HashMap::new();
@@ -40,12 +41,7 @@ fn cit_persistency_flush_on_exit_enabled() -> Result<(), ErrorCode> {
 
     {
         // First KVS run.
-        let kvs = Kvs::open(
-            InstanceId::new(0),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )?;
+        let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
 
         // Set values.
         for (key, value) in kv_values.iter() {
@@ -57,16 +53,12 @@ fn cit_persistency_flush_on_exit_enabled() -> Result<(), ErrorCode> {
     {
         // Second KVS run.
         // KVS file is expected to exist.
-        let kvs = Kvs::open(
-            InstanceId::new(0),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Required,
-            Some(dir_path),
-        )?;
+        let kvs =
+            kvs_provider.get(KvsParameters::new(InstanceId(0)).kvs_load(KvsLoad::Required))?;
 
         // Compare values.
         for (key, expected_value) in kv_values.iter() {
-            let actual_value = kvs.get_value(&key).unwrap();
+            let actual_value = kvs.get_value(key).unwrap();
             assert!(compare_kvs_values(expected_value, &actual_value))
         }
     }
@@ -79,6 +71,7 @@ fn cit_persistency_flush_on_exit_disabled_drop_data() -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
     let dir_path = dir.path().to_string_lossy().to_string();
+    let kvs_provider = KvsProvider::new(Some(dir_path));
 
     // Values of each type.
     let mut kv_values: HashMap<String, KvsValue> = HashMap::new();
@@ -100,13 +93,8 @@ fn cit_persistency_flush_on_exit_disabled_drop_data() -> Result<(), ErrorCode> {
 
     {
         // First KVS run.
-        let kvs = Kvs::open(
-            InstanceId::new(0),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )?;
-        kvs.flush_on_exit(false);
+        let kvs =
+            kvs_provider.get(KvsParameters::new(InstanceId(0)).flush_on_exit(FlushOnExit::No))?;
 
         // Set values.
         for (key, value) in kv_values.iter() {
@@ -126,6 +114,7 @@ fn cit_persistency_flush_on_exit_disabled_manual_flush() -> Result<(), ErrorCode
     // Temp directory.
     let dir = tempdir()?;
     let dir_path = dir.path().to_string_lossy().to_string();
+    let kvs_provider = KvsProvider::new(Some(dir_path));
 
     // Values of each type.
     let mut kv_values: HashMap<String, KvsValue> = HashMap::new();
@@ -147,13 +136,8 @@ fn cit_persistency_flush_on_exit_disabled_manual_flush() -> Result<(), ErrorCode
 
     {
         // First KVS run.
-        let kvs = Kvs::open(
-            InstanceId::new(0),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )?;
-        kvs.flush_on_exit(false);
+        let kvs =
+            kvs_provider.get(KvsParameters::new(InstanceId(0)).flush_on_exit(FlushOnExit::No))?;
 
         // Set values.
         for (key, value) in kv_values.iter() {
@@ -168,16 +152,15 @@ fn cit_persistency_flush_on_exit_disabled_manual_flush() -> Result<(), ErrorCode
     {
         // Second KVS run.
         // KVS file is expected to exist.
-        let kvs = Kvs::open(
-            InstanceId::new(0),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Required,
-            Some(dir_path),
+        let kvs = kvs_provider.get(
+            KvsParameters::new(InstanceId(0))
+                .flush_on_exit(FlushOnExit::No)
+                .kvs_load(KvsLoad::Required),
         )?;
 
         // Compare values.
         for (key, expected_value) in kv_values.iter() {
-            let actual_value = kvs.get_value(&key).unwrap();
+            let actual_value = kvs.get_value(key).unwrap();
             assert!(compare_kvs_values(expected_value, &actual_value))
         }
     }
@@ -190,25 +173,16 @@ fn cit_persistency_multiple_instances_shared_data() -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
     let dir_path = dir.path().to_string_lossy().to_string();
+    let kvs_provider = KvsProvider::new(Some(dir_path));
 
     // Initialize first KVS instance.
-    let kvs1 = Kvs::open(
-        InstanceId::new(0),
-        OpenNeedDefaults::Optional,
-        OpenNeedKvs::Optional,
-        Some(dir_path.clone()),
-    )?;
-    kvs1.flush_on_exit(false);
+    let kvs1 =
+        kvs_provider.get(KvsParameters::new(InstanceId(0)).flush_on_exit(FlushOnExit::No))?;
     kvs1.set_value("k1", KvsValue::from("v1".to_string()))?;
 
     // Initialize seconds KVS instance.
-    let kvs2 = Kvs::open(
-        InstanceId::new(0),
-        OpenNeedDefaults::Optional,
-        OpenNeedKvs::Optional,
-        Some(dir_path.clone()),
-    )?;
-    kvs2.flush_on_exit(false);
+    let kvs2 =
+        kvs_provider.get(KvsParameters::new(InstanceId(0)).flush_on_exit(FlushOnExit::No))?;
     kvs2.set_value("k2", KvsValue::from("v2".to_string()))?;
 
     // Assert data is shared between objects of same InstanceID.

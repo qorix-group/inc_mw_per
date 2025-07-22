@@ -22,6 +22,7 @@ use tinyjson::JsonValue;
 fn kvs_checksum_missing() -> Result<(), ErrorCode> {
     let dir = tempdir()?;
     set_current_dir(dir.path())?;
+    let kvs_provider = KvsProvider::new(None);
 
     let json = JsonValue::Object(HashMap::from([
         ("number".to_string(), 123.0.into()),
@@ -38,10 +39,7 @@ fn kvs_checksum_missing() -> Result<(), ErrorCode> {
     std::fs::write(json_path, json_str)?;
 
     // opening must fail because of the missing checksum file
-    let kvs = KvsBuilder::<Kvs>::new(InstanceId::new(0))
-        .need_defaults(false)
-        .need_kvs(true)
-        .build();
+    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)).kvs_load(KvsLoad::Required));
 
     assert_eq!(kvs.err(), Some(ErrorCode::KvsHashFileReadError));
 

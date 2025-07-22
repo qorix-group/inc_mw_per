@@ -10,50 +10,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //std dependencies
-use std::collections::BTreeMap;
 use std::fs;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::atomic::{self, AtomicBool};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex};
 
 use crate::error_code::ErrorCode;
-use crate::kvs_api::{InstanceId, KvsApi, SnapshotId};
-use crate::kvs_api::{OpenNeedDefaults, OpenNeedKvs};
-use crate::kvs_backend::KvsBackend;
+use crate::kvs_api::{FlushOnExit, InstanceId, KvsApi, SnapshotId};
+use crate::kvs_backend::{KvsBackend, KvsPathResolver};
 use crate::kvs_value::{KvsMap, KvsValue};
-
-static mut KVS_POOL: LazyLock<Mutex<KvsPool>> = LazyLock::new(|| {
-    Mutex::new(KvsPool {
-        pool: Mutex::new(BTreeMap::new()),
-    })
-});
-
-/// Pool of KVS maps.
-struct KvsPool {
-    /// Pool of KVS maps.
-    pool: Mutex<BTreeMap<InstanceId, Arc<Mutex<KvsMap>>>>,
-}
-
-impl KvsPool {
-    /// Check instance of KVS map for given instance ID exists.
-    pub fn exists(&self, instance_id: &InstanceId) -> bool {
-        let pool = self.pool.lock().unwrap();
-        pool.contains_key(instance_id)
-    }
-
-    /// Insert instance of KVS map for given instance ID.
-    pub fn insert(&mut self, instance_id: &InstanceId, kvs_map: KvsMap) {
-        let mut pool = self.pool.lock().unwrap();
-        let map = Arc::new(Mutex::new(kvs_map));
-        pool.insert(instance_id.clone(), map);
-    }
-
-    /// Get instance of KVS map for given instance ID.
-    pub fn get(&mut self, instance_id: &InstanceId) -> Option<Arc<Mutex<KvsMap>>> {
-        let pool = self.pool.lock().unwrap();
-        pool.get(instance_id).cloned()
-    }
-}
 
 /// Maximum number of snapshots
 ///
@@ -61,112 +27,58 @@ impl KvsPool {
 const KVS_MAX_SNAPSHOTS: usize = 3;
 
 /// Key-value-storage data
-pub struct GenericKvs<J: KvsBackend> {
+pub struct GenericKvs<Backend: KvsBackend, PathResolver: KvsPathResolver = Backend> {
+    /// Instance ID.
+    instance_id: InstanceId,
+
+    /// Working directory.
+    working_dir: PathBuf,
+
     /// Storage data
     ///
     /// Feature: `FEAT_REQ__KVS__thread_safety` (Mutex)
-    kvs: Arc<Mutex<KvsMap>>,
+    kvs_map: Arc<Mutex<KvsMap>>,
 
     /// Optional default values
     ///
     /// Feature: `FEAT_REQ__KVS__default_values`
-    default: KvsMap,
-
-    /// Filename prefix
-    filename_prefix: PathBuf,
+    defaults_map: Mutex<KvsMap>,
 
     /// Flush on exit flag
     flush_on_exit: AtomicBool,
 
-    _backend: std::marker::PhantomData<J>,
+    /// Marker for `Backend`.
+    _backend_marker: PhantomData<Backend>,
+
+    /// Marker for `PathResolver`.
+    _path_resolver_marker: PhantomData<PathResolver>,
 }
 
-/// Need-File flag
-#[derive(PartialEq)]
-enum OpenKvsNeedFile {
-    /// Optional: If the file doesn't exist, start with empty data
-    Optional,
-
-    /// Required: The file must already exist
-    Required,
-}
-
-impl From<OpenNeedDefaults> for OpenKvsNeedFile {
-    fn from(val: OpenNeedDefaults) -> OpenKvsNeedFile {
-        match val {
-            OpenNeedDefaults::Optional => OpenKvsNeedFile::Optional,
-            OpenNeedDefaults::Required => OpenKvsNeedFile::Required,
+impl From<FlushOnExit> for bool {
+    fn from(value: FlushOnExit) -> Self {
+        match value {
+            FlushOnExit::No => false,
+            FlushOnExit::Yes => true,
         }
     }
 }
 
-impl From<OpenNeedKvs> for OpenKvsNeedFile {
-    fn from(val: OpenNeedKvs) -> OpenKvsNeedFile {
-        match val {
-            OpenNeedKvs::Optional => OpenKvsNeedFile::Optional,
-            OpenNeedKvs::Required => OpenKvsNeedFile::Required,
-        }
-    }
-}
-
-/// Verify-Hash flag
-#[derive(PartialEq)]
-enum OpenKvsVerifyHash {
-    /// No: Parse the file without the hash
-    No,
-
-    /// Yes: Parse the file with the hash
-    Yes,
-}
-
-impl<J: KvsBackend> GenericKvs<J> {
-    /// Open and parse a JSON file
-    ///
-    /// Return an empty hash when no file was found.
-    ///
-    /// # Features
-    ///   * `FEAT_REQ__KVS__integrity_check`
-    ///
-    /// # Parameters
-    ///   * `need_file`: fail if file doesn't exist
-    ///   * `verify_hash`: content is verified against a hash file
-    ///
-    /// # Return Values
-    ///   * Ok: KVS data as `KvsMap`
-    ///   * `ErrorCode::ValidationFailed`: KVS hash validation failed
-    ///   * `ErrorCode::JsonParserError`: JSON parser error (invalid JSON or type error)
-    ///   * `ErrorCode::KvsFileReadError`: KVS file read error (I/O error)
-    ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error (hash file missing or unreadable)
-    ///   * `ErrorCode::UnmappedError`: Generic error
-    fn open_kvs<T>(
-        filename: &PathBuf,
-        need_file: T,
-        verify_hash: OpenKvsVerifyHash,
-        hash_filename: Option<&PathBuf>,
-    ) -> Result<KvsMap, ErrorCode>
-    where
-        T: Into<OpenKvsNeedFile>,
-    {
-        let do_hash = matches!(verify_hash, OpenKvsVerifyHash::Yes);
-        let filename_path = filename.clone();
-        let hash_filename_path = hash_filename.cloned();
-        match J::load_kvs(filename_path.clone(), do_hash, hash_filename_path.clone()) {
-            Ok(_) => {
-                let map = J::load_kvs(filename_path, do_hash, hash_filename_path).map_err(|e| {
-                    eprintln!("error: {e:?}");
-                    e
-                })?;
-                Ok(map)
-            }
-            Err(e) => {
-                if need_file.into() == OpenKvsNeedFile::Required {
-                    eprintln!("error: file {filename:?} could not be read: {e:?}");
-                    Err(e)
-                } else {
-                    println!("file {filename:?} not found, using empty data");
-                    Ok(KvsMap::new())
-                }
-            }
+impl<Backend: KvsBackend, PathResolver: KvsPathResolver> GenericKvs<Backend, PathResolver> {
+    pub fn new(
+        instance_id: InstanceId,
+        working_dir: PathBuf,
+        kvs_map: Arc<Mutex<KvsMap>>,
+        defaults_map: Mutex<KvsMap>,
+        flush_on_exit: FlushOnExit,
+    ) -> Self {
+        Self {
+            instance_id,
+            working_dir,
+            kvs_map,
+            defaults_map,
+            flush_on_exit: AtomicBool::new(flush_on_exit.into()),
+            _backend_marker: PhantomData,
+            _path_resolver_marker: PhantomData,
         }
     }
 
@@ -180,14 +92,29 @@ impl<J: KvsBackend> GenericKvs<J> {
     ///   * `ErrorCode::UnmappedError`: Unmapped error
     fn snapshot_rotate(&self) -> Result<(), ErrorCode> {
         for idx in (1..=KVS_MAX_SNAPSHOTS).rev() {
-            let hash_old = format!("{}_{}.hash", self.filename_prefix.display(), idx - 1);
-            let hash_new = format!("{}_{}.hash", self.filename_prefix.display(), idx);
-            let snap_old = format!("{}_{}.json", self.filename_prefix.display(), idx - 1);
-            let snap_new = format!("{}_{}.json", self.filename_prefix.display(), idx);
+            let old_snapshot_id = SnapshotId(idx - 1);
+            let new_snapshot_id = SnapshotId(idx);
 
-            println!("rotating: {snap_old} -> {snap_new}");
+            let hash_path_old = PathResolver::hash_file_path(
+                &self.working_dir,
+                &self.instance_id,
+                &old_snapshot_id,
+            );
+            let hash_path_new = PathResolver::hash_file_path(
+                &self.working_dir,
+                &self.instance_id,
+                &new_snapshot_id,
+            );
+            let snap_name_old = PathResolver::kvs_file_name(&self.instance_id, &old_snapshot_id);
+            let snap_path_old =
+                PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &old_snapshot_id);
+            let snap_name_new = PathResolver::kvs_file_name(&self.instance_id, &new_snapshot_id);
+            let snap_path_new =
+                PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &new_snapshot_id);
 
-            let res = fs::rename(hash_old, hash_new);
+            println!("rotating: {snap_name_old} -> {snap_name_new}");
+
+            let res = fs::rename(hash_path_old, hash_path_new);
             if let Err(err) = res {
                 if err.kind() != std::io::ErrorKind::NotFound {
                     return Err(err.into());
@@ -196,7 +123,7 @@ impl<J: KvsBackend> GenericKvs<J> {
                 }
             }
 
-            let res = fs::rename(snap_old, snap_new);
+            let res = fs::rename(snap_path_old, snap_path_new);
             if let Err(err) = res {
                 return Err(err.into());
             }
@@ -206,89 +133,16 @@ impl<J: KvsBackend> GenericKvs<J> {
     }
 }
 
-impl<J: KvsBackend> KvsApi for GenericKvs<J> {
-    /// Open the key-value-storage
-    ///
-    /// Checks and opens a key-value-storage. Flush on exit is enabled by default and can be
-    /// controlled with [`flush_on_exit`](Self::flush_on_exit).
-    ///
-    /// # Features
-    ///   * `FEAT_REQ__KVS__default_values`
-    ///   * `FEAT_REQ__KVS__multiple_kvs`
-    ///   * `FEAT_REQ__KVS__integrity_check`
-    ///
-    /// # Parameters
-    ///   * `instance_id`: Instance ID
-    ///   * `need_defaults`: Fail when no default file was found
-    ///   * `need_kvs`: Fail when no KVS file was found
-    ///
-    /// # Return Values
-    ///   * Ok: KVS instance
-    ///   * `ErrorCode::ValidationFailed`: KVS hash validation failed
-    ///   * `ErrorCode::JsonParserError`: JSON parser error (invalid JSON or type error)
-    ///   * `ErrorCode::KvsFileReadError`: KVS file read error (I/O error)
-    ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error (hash file missing or unreadable)
-    ///   * `ErrorCode::UnmappedError`: Generic error
-    fn open(
-        instance_id: InstanceId,
-        need_defaults: OpenNeedDefaults,
-        need_kvs: OpenNeedKvs,
-        dir: Option<String>,
-    ) -> Result<GenericKvs<J>, ErrorCode> {
-        let dir = if let Some(dir) = dir {
-            format!("{dir}/")
-        } else {
-            "".to_string()
-        };
-        let filename_default = PathBuf::from(format!("{dir}kvs_{instance_id}_default"));
-        let filename_prefix = PathBuf::from(format!("{dir}kvs_{instance_id}"));
-        let filename_kvs =
-            filename_prefix.with_file_name(format!("{}_0", filename_prefix.display()));
-
-        let default = GenericKvs::<J>::open_kvs(
-            &filename_default,
-            need_defaults,
-            OpenKvsVerifyHash::No,
-            None,
-        )?;
-        // Use hash checking for the main KVS file
-        let hash_path =
-            filename_prefix.with_file_name(format!("{}_0.hash", filename_prefix.display()));
-        #[allow(static_mut_refs)]
-        let kvs = unsafe {
-            let mut pool = KVS_POOL.lock().unwrap();
-            // If instance not initialized yet - load from file.
-            if !pool.exists(&instance_id) {
-                let kvs_map = GenericKvs::<J>::open_kvs(
-                    &filename_kvs,
-                    need_kvs,
-                    OpenKvsVerifyHash::Yes,
-                    Some(&hash_path),
-                )?;
-                pool.insert(&instance_id, kvs_map);
-            }
-            pool.get(&instance_id).unwrap()
-        };
-
-        println!("opened KVS: instance '{instance_id}'");
-        println!("max snapshot count: {KVS_MAX_SNAPSHOTS}");
-
-        Ok(GenericKvs {
-            kvs,
-            default,
-            filename_prefix,
-            flush_on_exit: AtomicBool::new(true),
-            _backend: std::marker::PhantomData,
-        })
-    }
-
+impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
+    for GenericKvs<Backend, PathResolver>
+{
     /// Control the flush on exit behaviour
     ///
     /// # Parameters
     ///   * `flush_on_exit`: Flag to control flush-on-exit behaviour
-    fn flush_on_exit(&self, flush_on_exit: bool) {
+    fn flush_on_exit(&self, flush_on_exit: FlushOnExit) {
         self.flush_on_exit
-            .store(flush_on_exit, atomic::Ordering::Relaxed);
+            .store(flush_on_exit.into(), atomic::Ordering::Relaxed);
     }
 
     /// Resets a key-value-storage to its initial state
@@ -297,7 +151,7 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * Ok: Reset of the KVS was successful
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn reset(&self) -> Result<(), ErrorCode> {
-        *self.kvs.lock()? = KvsMap::new();
+        *self.kvs_map.lock()? = KvsMap::new();
         Ok(())
     }
 
@@ -307,7 +161,8 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * Ok: List of all keys
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn get_all_keys(&self) -> Result<Vec<String>, ErrorCode> {
-        Ok(self.kvs.lock()?.keys().map(|x| x.to_string()).collect())
+        let kvs_map = self.kvs_map.lock()?;
+        Ok(kvs_map.keys().map(|x| x.to_string()).collect())
     }
 
     /// Check if a key exists
@@ -320,7 +175,8 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * Ok(`false`): Key doesn't exist
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     fn key_exists(&self, key: &str) -> Result<bool, ErrorCode> {
-        Ok(self.kvs.lock()?.contains_key(key))
+        let kvs_map = self.kvs_map.lock()?;
+        Ok(kvs_map.contains_key(key))
     }
 
     /// Get the assigned value for a given key
@@ -336,11 +192,12 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     ///   * `ErrorCode::KeyNotFound`: Key wasn't found in KVS nor in defaults
     fn get_value(&self, key: &str) -> Result<KvsValue, ErrorCode> {
-        let kvs = self.kvs.lock()?;
+        let kvs_map = self.kvs_map.lock()?;
+        let defaults_map = self.defaults_map.lock()?;
 
-        if let Some(value) = kvs.get(key) {
+        if let Some(value) = kvs_map.get(key) {
             Ok(value.clone())
-        } else if let Some(value) = self.default.get(key) {
+        } else if let Some(value) = defaults_map.get(key) {
             Ok(value.clone())
         } else {
             eprintln!("error: get_value could not find key: {key}");
@@ -369,9 +226,10 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
         for<'a> T: TryFrom<&'a KvsValue> + std::clone::Clone,
         for<'a> <T as TryFrom<&'a KvsValue>>::Error: std::fmt::Debug,
     {
-        let kvs = self.kvs.lock()?;
+        let kvs_map = self.kvs_map.lock()?;
+        let defaults_map = self.defaults_map.lock()?;
 
-        if let Some(value) = kvs.get(key) {
+        if let Some(value) = kvs_map.get(key) {
             match T::try_from(value) {
                 Ok(value) => Ok(value),
                 Err(err) => {
@@ -381,7 +239,7 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
                     Err(ErrorCode::ConversionFailed)
                 }
             }
-        } else if let Some(value) = self.default.get(key) {
+        } else if let Some(value) = defaults_map.get(key) {
             // check if key has a default value
             match T::try_from(value) {
                 Ok(value) => Ok(value),
@@ -412,7 +270,9 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * Ok: `KvsValue` for the key
     ///   * `ErrorCode::KeyNotFound`: Key not found in defaults
     fn get_default_value(&self, key: &str) -> Result<KvsValue, ErrorCode> {
-        if let Some(value) = self.default.get(key) {
+        let defaults_map = self.defaults_map.lock()?;
+
+        if let Some(value) = defaults_map.get(key) {
             Ok(value.clone())
         } else {
             Err(ErrorCode::KeyNotFound)
@@ -433,9 +293,12 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     ///   * `ErrorCode::KeyNotFound`: Key wasn't found
     fn is_value_default(&self, key: &str) -> Result<bool, ErrorCode> {
-        if self.kvs.lock()?.contains_key(key) {
+        let kvs_map = self.kvs_map.lock()?;
+        let defaults_map = self.defaults_map.lock()?;
+
+        if kvs_map.contains_key(key) {
             Ok(false)
-        } else if self.default.contains_key(key) {
+        } else if defaults_map.contains_key(key) {
             Ok(true)
         } else {
             Err(ErrorCode::KeyNotFound)
@@ -456,7 +319,8 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
         key: S,
         value: V,
     ) -> Result<(), ErrorCode> {
-        self.kvs.lock()?.insert(key.into(), value.into());
+        let mut kvs_map = self.kvs_map.lock()?;
+        kvs_map.insert(key.into(), value.into());
         Ok(())
     }
 
@@ -470,7 +334,8 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * `ErrorCode::MutexLockFailed`: Mutex locking failed
     ///   * `ErrorCode::KeyNotFound`: Key not found
     fn remove_key(&self, key: &str) -> Result<(), ErrorCode> {
-        if self.kvs.lock()?.remove(key).is_some() {
+        let mut kvs_map = self.kvs_map.lock()?;
+        if kvs_map.remove(key).is_some() {
             Ok(())
         } else {
             Err(ErrorCode::KeyNotFound)
@@ -495,11 +360,17 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
             eprintln!("error: snapshot_rotate failed: {e:?}");
             e
         })?;
-        let kvs = self.kvs.lock().map_err(|e| {
+        let kvs_map = self.kvs_map.lock().map_err(|e| {
             eprintln!("error: Mutex lock failed: {e:?}");
             ErrorCode::MutexLockFailed
         })?;
-        J::save_kvs(&kvs, self.filename_prefix.clone(), true).map_err(|e| {
+
+        let snapshot_id = SnapshotId(0);
+        let kvs_path =
+            PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &snapshot_id);
+        let hash_path =
+            PathResolver::hash_file_path(&self.working_dir, &self.instance_id, &snapshot_id);
+        Backend::save_kvs(&kvs_map, &kvs_path, Some(&hash_path)).map_err(|e| {
             eprintln!("error: save_kvs failed: {e:?}");
             e
         })?;
@@ -514,11 +385,9 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
         let mut count = 0;
 
         for idx in 0..KVS_MAX_SNAPSHOTS {
-            let snapshot_path = self.filename_prefix.with_file_name(format!(
-                "{}_{}.json",
-                self.filename_prefix.display(),
-                idx
-            ));
+            let snapshot_id = SnapshotId(idx);
+            let snapshot_path =
+                PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &snapshot_id);
             if !snapshot_path.exists() {
                 break;
             }
@@ -555,26 +424,24 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     ///   * `ErrorCode::KvsFileReadError`: KVS file not found
     ///   * `ErrorCode::KvsHashFileReadError`: KVS hash file read error
     ///   * `ErrorCode::UnmappedError`: Generic error
-    fn snapshot_restore(&self, id: SnapshotId) -> Result<(), ErrorCode> {
+    fn snapshot_restore(&self, snapshot_id: &SnapshotId) -> Result<(), ErrorCode> {
         // fail if the snapshot ID is the current KVS
-        if id.0 == 0 {
+        if *snapshot_id == SnapshotId(0) {
             eprintln!("error: tried to restore current KVS as snapshot");
             return Err(ErrorCode::InvalidSnapshotId);
         }
 
-        if self.snapshot_count() < id.0 {
+        if self.snapshot_count() < snapshot_id.0 {
             eprintln!("error: tried to restore a non-existing snapshot");
             return Err(ErrorCode::InvalidSnapshotId);
         }
 
-        let snap_path = PathBuf::from(format!("{}_{}", self.filename_prefix.display(), id.0));
-        let kvs = Self::open_kvs(
-            &snap_path,
-            OpenKvsNeedFile::Required,
-            OpenKvsVerifyHash::Yes,
-            None,
-        )?;
-        *self.kvs.lock()? = kvs;
+        let kvs_path =
+            PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, snapshot_id);
+        let hash_path =
+            PathResolver::hash_file_path(&self.working_dir, &self.instance_id, snapshot_id);
+        let kvs_map = Backend::load_kvs(&kvs_path, Some(&hash_path))?;
+        *self.kvs_map.lock()? = kvs_map;
 
         Ok(())
     }
@@ -587,12 +454,8 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     /// # Return Values
     ///   * `Ok`: Filename for ID
     ///   * `ErrorCode::FileNotFound`: KVS file for snapshot ID not found
-    fn get_kvs_filename(&self, id: SnapshotId) -> Result<PathBuf, ErrorCode> {
-        let path = self.filename_prefix.with_file_name(format!(
-            "{}_{}.json",
-            self.filename_prefix.display(),
-            id
-        ));
+    fn get_kvs_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
+        let path = PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, snapshot_id);
         if !path.exists() {
             Err(ErrorCode::FileNotFound)
         } else {
@@ -608,12 +471,8 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     /// # Return Values
     ///   * `Ok`: Hash filename for ID
     ///   * `ErrorCode::FileNotFound`: Hash file for snapshot ID not found
-    fn get_hash_filename(&self, id: SnapshotId) -> Result<PathBuf, ErrorCode> {
-        let path = self.filename_prefix.with_file_name(format!(
-            "{}_{}.hash",
-            self.filename_prefix.display(),
-            id
-        ));
+    fn get_hash_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
+        let path = PathResolver::hash_file_path(&self.working_dir, &self.instance_id, snapshot_id);
         if !path.exists() {
             Err(ErrorCode::FileNotFound)
         } else {
@@ -622,7 +481,9 @@ impl<J: KvsBackend> KvsApi for GenericKvs<J> {
     }
 }
 
-impl<J: KvsBackend> Drop for GenericKvs<J> {
+impl<Backend: KvsBackend, PathResolver: KvsPathResolver> Drop
+    for GenericKvs<Backend, PathResolver>
+{
     fn drop(&mut self) {
         if self.flush_on_exit.load(atomic::Ordering::Relaxed) {
             if let Err(e) = self.flush() {
@@ -634,27 +495,26 @@ impl<J: KvsBackend> Drop for GenericKvs<J> {
 
 #[cfg(test)]
 mod tests {
-
-    use super::*;
-    use crate::Kvs;
+    use crate::json_backend::JsonBackend;
+    use crate::prelude::*;
     use tempfile::tempdir;
 
     mod mock_backend {
-        use super::*;
         use crate::kvs_backend::KvsBackend;
+        use crate::prelude::*;
+        use std::path::{Path, PathBuf};
 
         #[derive(Default, Clone)]
         pub struct KvsMockBackend {}
 
         impl KvsBackend for KvsMockBackend {
             fn load_kvs(
-                source_path: PathBuf,
-                _verify_hash: bool,
-                _hash_source: Option<PathBuf>,
+                kvs_path: &Path,
+                _hash_path: Option<&PathBuf>,
             ) -> Result<KvsMap, ErrorCode> {
                 let mut map = KvsMap::new();
-                let fname = source_path.display().to_string();
-                if fname.ends_with("default") {
+                let fname = kvs_path.display().to_string();
+                if fname.ends_with("default.json") {
                     map.insert("mock_default_key".to_string(), KvsValue::from(111.0));
                 } else {
                     map.insert("mock_key".to_string(), KvsValue::from(123.0));
@@ -663,9 +523,9 @@ mod tests {
             }
 
             fn save_kvs(
-                _kvs: &KvsMap,
-                _destination_path: PathBuf,
-                _add_hash: bool,
+                _kvs_map: &KvsMap,
+                _kvs_path: &Path,
+                _hash_path: Option<&PathBuf>,
             ) -> Result<(), ErrorCode> {
                 Ok(())
             }
@@ -676,17 +536,16 @@ mod tests {
 
         impl KvsBackend for KvsMockBackendFail {
             fn load_kvs(
-                _source_path: PathBuf,
-                _verify_hash: bool,
-                _hash_source: Option<PathBuf>,
+                _kvs_path: &Path,
+                _hash_path: Option<&PathBuf>,
             ) -> Result<KvsMap, ErrorCode> {
                 Err(ErrorCode::UnmappedError)
             }
 
             fn save_kvs(
-                _kvs: &KvsMap,
-                _destination_path: PathBuf,
-                _add_hash: bool,
+                _kvs_map: &KvsMap,
+                _kvs_path: &Path,
+                _hash_path: Option<&PathBuf>,
             ) -> Result<(), ErrorCode> {
                 Err(ErrorCode::UnmappedError)
             }
@@ -694,44 +553,43 @@ mod tests {
     }
 
     use mock_backend::KvsMockBackend;
+    type MockKvsProvider = GenericKvsProvider<KvsMockBackend, JsonBackend>;
+    type MockKvs = GenericKvs<KvsMockBackend, JsonBackend>;
+
     use mock_backend::KvsMockBackendFail;
+    type MockFailKvsProvider = GenericKvsProvider<KvsMockBackendFail, JsonBackend>;
+    type MockFailKvs = GenericKvs<KvsMockBackendFail, JsonBackend>;
 
-    fn new_kvs_with_mock() -> GenericKvs<KvsMockBackend> {
-        let instance_id = InstanceId::new(100);
-        // Directory is not used by mock backend
-        GenericKvs::<KvsMockBackend>::open(
-            instance_id,
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            None,
-        )
-        .unwrap()
+    fn mock_kvs(kvs_provider: &MockKvsProvider) -> Result<MockKvs, ErrorCode> {
+        let instance_id = InstanceId(100);
+        let params = KvsParameters::new(instance_id);
+        kvs_provider.get(params)
     }
 
-    fn new_kvs_with_mock_required() -> GenericKvs<KvsMockBackend> {
-        let instance_id = InstanceId::new(101);
-        GenericKvs::<KvsMockBackend>::open(
-            instance_id,
-            OpenNeedDefaults::Required,
-            OpenNeedKvs::Required,
-            None,
-        )
-        .unwrap()
+    fn mock_kvs_params(
+        kvs_provider: &MockKvsProvider,
+        defaults: Defaults,
+        kvs_load: KvsLoad,
+    ) -> Result<MockKvs, ErrorCode> {
+        let instance_id = InstanceId(100);
+        let params = KvsParameters::new(instance_id)
+            .defaults(defaults)
+            .kvs_load(kvs_load);
+        kvs_provider.get(params)
     }
 
-    fn new_kvs_with_mock_required_fail() -> Result<GenericKvs<KvsMockBackendFail>, ErrorCode> {
-        let instance_id = InstanceId::new(102);
-        GenericKvs::<KvsMockBackendFail>::open(
-            instance_id,
-            OpenNeedDefaults::Required,
-            OpenNeedKvs::Required,
-            None,
-        )
+    fn mock_kvs_fail(kvs_provider: &MockFailKvsProvider) -> Result<MockFailKvs, ErrorCode> {
+        let instance_id = InstanceId(100);
+        let params = KvsParameters::new(instance_id)
+            .defaults(Defaults::Required)
+            .kvs_load(KvsLoad::Required);
+        kvs_provider.get(params)
     }
 
     #[test]
     fn test_open_kvs_with_mock_required_success() {
-        let kvs = new_kvs_with_mock_required();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs_params(&kvs_provider, Defaults::Required, KvsLoad::Required).unwrap();
         // Should contain the mock_key from mock backend
         assert!(kvs.key_exists("mock_key").unwrap());
         let value = kvs.get_value("mock_key").unwrap();
@@ -740,7 +598,8 @@ mod tests {
 
     #[test]
     fn test_open_kvs_with_mock_required_fail() {
-        let res = new_kvs_with_mock_required_fail();
+        let kvs_provider = MockFailKvsProvider::new(Some("".to_string()));
+        let res = mock_kvs_fail(&kvs_provider);
         assert!(res.is_err());
         // Should be ErrorCode::UnmappedError
         assert!(matches!(res, Err(ErrorCode::UnmappedError)));
@@ -748,7 +607,8 @@ mod tests {
 
     #[test]
     fn test_open_kvs_with_mock_backend() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs_params(&kvs_provider, Defaults::Required, KvsLoad::Required).unwrap();
         // Should contain the mock_key from mock backend
         assert!(kvs.key_exists("mock_key").unwrap());
         let value = kvs.get_value("mock_key").unwrap();
@@ -757,7 +617,8 @@ mod tests {
 
     #[test]
     fn test_set_and_get_value() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         kvs.set_value("foo", 42.0).unwrap();
         let value = kvs.get_value("foo").unwrap();
         assert_eq!(*value.get::<f64>().unwrap(), 42.0);
@@ -765,7 +626,8 @@ mod tests {
 
     #[test]
     fn test_get_value_as() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         kvs.set_value("bar", 99.0).unwrap();
         let v: f64 = kvs.get_value_as("bar").unwrap();
         assert_eq!(v, 99.0);
@@ -773,8 +635,9 @@ mod tests {
 
     #[test]
     fn test_get_default_value_and_is_value_default() {
-        let kvs = new_kvs_with_mock_required();
-        println!("{:?}", kvs.default);
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs_params(&kvs_provider, Defaults::Required, KvsLoad::Required).unwrap();
+        println!("{:?}", kvs.defaults_map);
         // mock_key is always present as default in mock backend
         assert!(kvs.is_value_default("mock_default_key").unwrap());
         let def = kvs.get_default_value("mock_default_key").unwrap();
@@ -786,7 +649,8 @@ mod tests {
 
     #[test]
     fn test_key_exists_and_get_all_keys() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs_params(&kvs_provider, Defaults::Required, KvsLoad::Required).unwrap();
         assert!(kvs.key_exists("mock_key").unwrap());
         kvs.set_value("foo", true).unwrap();
         assert!(kvs.key_exists("foo").unwrap());
@@ -797,7 +661,8 @@ mod tests {
 
     #[test]
     fn test_remove_key() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         kvs.set_value("baz", 1.0).unwrap();
         assert!(kvs.key_exists("baz").unwrap());
         kvs.remove_key("baz").unwrap();
@@ -806,7 +671,8 @@ mod tests {
 
     #[test]
     fn test_reset() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         kvs.set_value("reset_me", 5.0).unwrap();
         assert!(kvs.key_exists("reset_me").unwrap());
         kvs.reset().unwrap();
@@ -815,40 +681,69 @@ mod tests {
 
     #[test]
     fn test_flush_with_mock_backend() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         // Should not error, even though nothing is written
         kvs.flush().unwrap();
     }
 
     #[test]
     fn test_snapshot_count_and_max_count() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         // No real snapshots, so count should be 0
         assert_eq!(kvs.snapshot_count(), 0);
-        assert_eq!(GenericKvs::<KvsMockBackend>::snapshot_max_count(), 3);
+        assert_eq!(
+            GenericKvs::<KvsMockBackend, JsonBackend>::snapshot_max_count(),
+            3
+        );
     }
 
     #[test]
     fn test_snapshot_restore_invalid_id() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         // id 1 is always invalid in this mock (no real snapshots)
-        let res = kvs.snapshot_restore(SnapshotId::new(1));
+        let res = kvs.snapshot_restore(&SnapshotId(1));
         assert!(res.is_err());
     }
 
     #[test]
-    fn test_get_kvs_filename_and_hash_filename() {
-        let kvs = new_kvs_with_mock();
-        // No files exist, so should return FileNotFound
-        let res = kvs.get_kvs_filename(SnapshotId::new(1));
-        assert!(matches!(res, Err(ErrorCode::FileNotFound)));
-        let res = kvs.get_hash_filename(SnapshotId::new(1));
-        assert!(matches!(res, Err(ErrorCode::FileNotFound)));
+    fn test_get_kvs_file_path() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
+
+        let instance_id = InstanceId(100);
+        let kvs = kvs_provider.get(KvsParameters::new(instance_id)).unwrap();
+
+        kvs.flush().unwrap();
+        kvs.flush().unwrap();
+        let kvs_path = kvs.get_kvs_file_path(&SnapshotId(1)).unwrap();
+        let kvs_name = kvs_path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(kvs_name, "kvs_100_1.json");
+    }
+
+    #[test]
+    fn test_get_hash_file_path() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
+
+        let instance_id = InstanceId(100);
+        let kvs = kvs_provider.get(KvsParameters::new(instance_id)).unwrap();
+
+        kvs.flush().unwrap();
+        kvs.flush().unwrap();
+        let hash_path = kvs.get_hash_file_path(&SnapshotId(1)).unwrap();
+        let hash_name = hash_path.file_name().unwrap().to_str().unwrap();
+        assert_eq!(hash_name, "kvs_100_1.hash");
     }
 
     #[test]
     fn test_get_value_error_cases() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         // Key does not exist
         let res = kvs.get_value("not_found");
         assert!(matches!(res, Err(ErrorCode::KeyNotFound)));
@@ -856,7 +751,8 @@ mod tests {
 
     #[test]
     fn test_get_value_as_conversion_error() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         kvs.set_value("str_key", "string".to_string()).unwrap();
         // Try to get as f64, should fail
         let res: Result<f64, _> = kvs.get_value_as("str_key");
@@ -865,7 +761,8 @@ mod tests {
 
     #[test]
     fn test_is_value_default_error() {
-        let kvs = new_kvs_with_mock();
+        let kvs_provider = MockKvsProvider::new(Some("".to_string()));
+        let kvs = mock_kvs(&kvs_provider).unwrap();
         let res = kvs.is_value_default("not_found");
         assert!(matches!(res, Err(ErrorCode::KeyNotFound)));
     }
@@ -874,15 +771,10 @@ mod tests {
     fn test_kvs_open_and_set_get_value() {
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
 
-        let instance_id = InstanceId::new(42);
-        let kvs = Kvs::open(
-            instance_id.clone(),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )
-        .unwrap();
+        let instance_id = InstanceId(42);
+        let kvs = kvs_provider.get(KvsParameters::new(instance_id)).unwrap();
         let _ = kvs.set_value("direct", KvsValue::String("abc".to_string()));
         let value = kvs.get_value("direct").unwrap();
         assert_eq!(value.get::<String>().unwrap(), "abc");
@@ -892,15 +784,10 @@ mod tests {
     fn test_kvs_reset() {
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
 
-        let instance_id = InstanceId::new(43);
-        let kvs = Kvs::open(
-            instance_id.clone(),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )
-        .unwrap();
+        let instance_id = InstanceId(43);
+        let kvs = kvs_provider.get(KvsParameters::new(instance_id)).unwrap();
         let _ = kvs.set_value("reset", 1.0);
         assert!(kvs.get_value("reset").is_ok());
         kvs.reset().unwrap();
@@ -914,15 +801,10 @@ mod tests {
     fn test_kvs_key_exists_and_get_all_keys() {
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
 
-        let instance_id = InstanceId::new(44);
-        let kvs = Kvs::open(
-            instance_id.clone(),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )
-        .unwrap();
+        let instance_id = InstanceId(44);
+        let kvs = kvs_provider.get(KvsParameters::new(instance_id)).unwrap();
         assert!(!kvs.key_exists("foo").unwrap());
         let _ = kvs.set_value("foo", KvsValue::Boolean(true));
         assert!(kvs.key_exists("foo").unwrap());
@@ -934,15 +816,10 @@ mod tests {
     fn test_kvs_remove_key() {
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
 
-        let instance_id = InstanceId::new(45);
-        let kvs = Kvs::open(
-            instance_id.clone(),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )
-        .unwrap();
+        let instance_id = InstanceId(45);
+        let kvs = kvs_provider.get(KvsParameters::new(instance_id)).unwrap();
         let _ = kvs.set_value("bar", 2.0);
         assert!(kvs.key_exists("bar").unwrap());
         kvs.remove_key("bar").unwrap();
@@ -953,15 +830,10 @@ mod tests {
     fn test_kvs_flush_and_snapshot() {
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
 
-        let instance_id = InstanceId::new(46);
-        let kvs = Kvs::open(
-            instance_id.clone(),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )
-        .unwrap();
+        let instance_id = InstanceId(46);
+        let kvs = kvs_provider.get(KvsParameters::new(instance_id)).unwrap();
         let _ = kvs.set_value("snap", 3.0);
         // Before flush, snapshot count should be 0 (no snapshots yet)
         assert_eq!(kvs.snapshot_count(), 0);
@@ -973,7 +845,7 @@ mod tests {
         assert_eq!(kvs.snapshot_count(), 2);
         // Restore from snapshot if available
         if kvs.snapshot_count() > 0 {
-            kvs.snapshot_restore(SnapshotId::new(1)).unwrap();
+            kvs.snapshot_restore(&SnapshotId(1)).unwrap();
         }
     }
 
@@ -981,18 +853,13 @@ mod tests {
     fn test_drop() {
         let dir = tempdir().unwrap();
         let dir_path = dir.path().to_string_lossy().to_string();
+        let kvs_provider = KvsProvider::new(Some(dir_path));
 
-        let instance_id = InstanceId::new(0);
+        let instance_id = InstanceId(0);
+        let kvs = kvs_provider
+            .get(KvsParameters::new(instance_id).flush_on_exit(FlushOnExit::No))
+            .unwrap();
 
-        let kvs = Kvs::open(
-            instance_id.clone(),
-            OpenNeedDefaults::Optional,
-            OpenNeedKvs::Optional,
-            Some(dir_path.clone()),
-        )
-        .unwrap();
-
-        kvs.flush_on_exit(false);
         // Drop is called automatically, but we can check that flush_on_exit is set to false
         assert!(
             !kvs.flush_on_exit.load(std::sync::atomic::Ordering::Relaxed),
