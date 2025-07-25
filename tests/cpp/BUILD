@@ -59,3 +59,24 @@ cc_test(
         "@score-baselibs//score/result:result",
     ],
 )
+
+cc_test(
+    name = "test_kvs_type_issue_repro",
+    size = "small",
+    srcs = [
+        "test_type_issue_repro.cpp",
+        "//src/cpp:kvs_srcs",
+    ],
+    copts = [
+        "-Isrc/cpp/inc",
+    ],
+    visibility = ["//:__pkg__"],
+    deps = [
+        ":json_stubs",
+        "@googletest//:gtest_main",
+        "@score-baselibs//score/filesystem:filesystem",
+        "@score-baselibs//score/memory:string_comparison_adaptor",
+        "@score-baselibs//score/result:result",
+        "@score-baselibs//score/json:json_parser",
+    ],
+)
