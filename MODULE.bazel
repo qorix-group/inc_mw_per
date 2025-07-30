@@ -63,6 +63,11 @@ bazel_dep(name = "buildifier_prebuilt", version = "7.3.1")
 
 #docs-as-code
 bazel_dep(name = "score_docs_as_code", version = "0.3.3")
+git_override(
+    module_name = "score_docs_as_code",
+    remote      = "https://github.com/nicu1989/docs-as-code.git",
+    commit = "129a57c",  # sphinx_rust released from nicu1989/sphinx-rust (v0.0.2-dev8)
+)
 
 # Module deps
 

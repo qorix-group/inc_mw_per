@@ -28,6 +28,7 @@ author = "S-CORE"
 
 
 extensions = [
+    "sphinx_rust",
     "sphinx_design",
     "sphinx_needs",
     "sphinxcontrib.plantuml",
@@ -36,6 +37,11 @@ extensions = [
     "score_draw_uml_funcs",
     "score_source_code_linker",
     "score_layout",
+]
+
+rust_crates = [
+    "../src/rust/rust_kvs",
+    "../src/rust/rust_kvs_tool",
 ]
 
 exclude_patterns = [

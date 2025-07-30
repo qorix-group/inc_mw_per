@@ -27,7 +27,12 @@ use crate::kvs_value::{KvsMap, KvsValue};
 /// Feature: `FEAT_REQ__KVS__snapshots`
 const KVS_MAX_SNAPSHOTS: usize = 3;
 
-/// Key-value-storage data
+///.. sw_unit:: Kvs
+///   :id: sw_unit__ddd__kvs
+///   :links: dd_sta__ddd__api
+///   :security: YES
+///   :safety: ASIL_B
+///   :status: valid
 pub struct GenericKvs<J: KvsBackend> {
     /// Storage data
     ///

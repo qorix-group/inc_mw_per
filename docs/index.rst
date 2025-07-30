@@ -156,5 +156,11 @@ Limitations and Future Work
 
 - :need:`SCORE_feat_req__kvs__maximum_size` *(currently unsupported)*
 
+Sphinx Rust
+--------
+
+- :doc:`RUST KVS <api/crates/rust_kvs/index>`
+- :doc:`RUST KVS TOOLS <api/crates/kvs_tool/index>`
+
 
 
