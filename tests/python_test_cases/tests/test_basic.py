@@ -56,4 +56,4 @@ class TestBasicCpp(TestBasic):
 class TestBasicRust(TestBasic):
     @pytest.fixture(scope="class")
     def build_tools(self, *_, **__) -> BuildTools:
-        return CargoTools(option_prefix="rust")
+        return BazelTools(option_prefix="rust")

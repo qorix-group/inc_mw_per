@@ -66,8 +66,9 @@ bazel_dep(name = "buildifier_prebuilt", version = "7.3.1")
 bazel_dep(name = "score_docs_as_code", version = "0.3.3")
 
 # Testing utils dependency.
+# TODO: replace commit id with tag.
 bazel_dep(name = "testing-utils")
-local_path_override(module_name = "testing-utils", path = "/home/arkjedrz/qorix-group/testing_tools")
+git_override(module_name = "testing-utils", remote = "https://github.com/qorix-group/testing_tools.git", commit = "2c58adab6118d0c768492a68aabdba93d5cbeda8")
 
 # Module deps
 

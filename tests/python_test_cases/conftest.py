@@ -25,15 +25,10 @@ def pytest_addoption(parser):
         help="C++ test scenario executable target.",
     )
     parser.addoption(
-        "--rust-target-path",
-        type=Path,
-        help="Path to test scenarios executable. Search is performed by default.",
-    )
-    parser.addoption(
         "--rust-target-name",
         type=str,
-        default="rust_test_scenarios",
-        help='Rust test scenario executable target. Overwritten by "--rust-target-path".',
+        default="//tests/rust_test_scenarios:rust_test_scenarios",
+        help="Rust test scenario executable target.",
     )
     parser.addoption(
         "--build-scenarios",
@@ -64,13 +59,13 @@ def pytest_sessionstart(session):
 
             # Build Rust test scenarios.
             print("Building Rust test scenarios executable...")
-            cargo_tools = CargoTools(option_prefix="rust", build_timeout=build_timeout)
-            rust_target_name = cargo_tools.select_target_path(session.config, expect_exists=False).name
+            cargo_tools = BazelTools(option_prefix="rust", build_timeout=build_timeout)
+            rust_target_name = session.config.getoption("--rust-target-name")
             cargo_tools.build(rust_target_name)
 
             # Build C++ test scenarios.
             print("Building C++ test scenarios executable...")
-            bazel_tools = BazelTools(build_timeout=build_timeout)
+            bazel_tools = BazelTools(option_prefix="cpp", build_timeout=build_timeout)
             cpp_target_name = session.config.getoption("--cpp-target-name")
             bazel_tools.build(cpp_target_name)
 
