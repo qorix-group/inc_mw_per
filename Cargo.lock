@@ -67,12 +67,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 
 [[package]]
-name = "pico-args"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5be167a7af36ee22fe3115051bc51f6e6c7054c9348e28deb4f49bd6f705a315"
-
-[[package]]
 name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -84,15 +78,6 @@ version = "0.1.0"
 dependencies = [
  "adler32",
  "tempfile",
- "tinyjson",
-]
-
-[[package]]
-name = "rust_kvs_tool"
-version = "0.1.0"
-dependencies = [
- "pico-args",
- "rust_kvs",
  "tinyjson",
 ]
 

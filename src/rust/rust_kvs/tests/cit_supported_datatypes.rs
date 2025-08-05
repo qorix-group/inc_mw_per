@@ -17,10 +17,10 @@ use tempfile::tempdir;
 fn cit_supported_datatypes_keys() -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
-    let dir_path = dir.path().to_string_lossy().to_string();
-    let kvs_provider = KvsProvider::new(Some(dir_path));
+    let dir_path = dir.path().to_path_buf();
+    let mut kvs_provider = KvsProvider::new(dir_path);
 
-    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
+    let kvs = kvs_provider.init(KvsParameters::new(InstanceId(0)))?;
     // `str` and `String` are guaranteed to be valid UTF-8.
     kvs.set_value("k1", ())?;
     kvs.set_value(String::from("k2"), ())?;
@@ -34,11 +34,11 @@ fn cit_supported_datatypes_keys() -> Result<(), ErrorCode> {
 fn supported_datatypes_common_impl(data: HashMap<&str, KvsValue>) -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
-    let dir_path = dir.path().to_string_lossy().to_string();
-    let kvs_provider = KvsProvider::new(Some(dir_path));
+    let dir_path = dir.path().to_path_buf();
+    let mut kvs_provider = KvsProvider::new(dir_path);
 
     // Initialize KVS and load data.
-    let kvs = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
+    let kvs = kvs_provider.init(KvsParameters::new(InstanceId(0)))?;
     for (k, v) in data.iter() {
         kvs.set_value(k.to_string(), v.clone())?;
     }
@@ -87,7 +87,7 @@ fn cit_supported_datatypes_array() -> Result<(), ErrorCode> {
         KvsValue::from(vec![
             KvsValue::from(321.0),
             KvsValue::from(false),
-            KvsValue::from("dbca".to_string()),
+            KvsValue::from("example_string".to_string()),
             KvsValue::from(()),
             KvsValue::from(vec![]),
             KvsValue::from(hashmap),

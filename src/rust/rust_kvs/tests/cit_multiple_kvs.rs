@@ -13,8 +13,7 @@ use tempfile::tempdir;
 fn cit_persistency_multiple_instances() -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
-    let dir_string = dir.path().to_string_lossy().to_string();
-    let kvs_provider = KvsProvider::new(Some(dir_string));
+    let dir_path = dir.path().to_path_buf();
 
     // Values.
     let keyname = "number".to_string();
@@ -22,10 +21,10 @@ fn cit_persistency_multiple_instances() -> Result<(), ErrorCode> {
     let value2 = 222.2;
 
     {
-        // Create first KVS instance.
-        let kvs1 = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
-        // Create second KVS instance.
-        let kvs2 = kvs_provider.get(KvsParameters::new(InstanceId(1)))?;
+        // First KVS run.
+        let mut kvs_provider = KvsProvider::new(dir_path.clone());
+        let kvs1 = kvs_provider.init(KvsParameters::new(InstanceId(0)))?;
+        let kvs2 = kvs_provider.init(KvsParameters::new(InstanceId(1)))?;
 
         // Set values to both KVS instances.
         kvs1.set_value(&keyname, value1)?;
@@ -35,8 +34,9 @@ fn cit_persistency_multiple_instances() -> Result<(), ErrorCode> {
     // Assertions.
     {
         // Second KVS run.
-        let kvs1 = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
-        let kvs2 = kvs_provider.get(KvsParameters::new(InstanceId(1)))?;
+        let mut kvs_provider = KvsProvider::new(dir_path);
+        let kvs1 = kvs_provider.init(KvsParameters::new(InstanceId(0)))?;
+        let kvs2 = kvs_provider.init(KvsParameters::new(InstanceId(1)))?;
 
         // Compare values, ensure they are not mixed up.
         assert_eq!(
@@ -69,18 +69,17 @@ fn cit_persistency_multiple_instances() -> Result<(), ErrorCode> {
 fn cit_persistency_multiple_instances_same_id_common_value() -> Result<(), ErrorCode> {
     // Temp directory.
     let dir = tempdir()?;
-    let dir_string = dir.path().to_string_lossy().to_string();
-    let kvs_provider = KvsProvider::new(Some(dir_string));
+    let dir_path = dir.path().to_path_buf();
+    let mut kvs_provider = KvsProvider::new(dir_path);
 
     // Values.
     let common_keyname = "number".to_string();
     let common_value = 100.0;
 
     {
-        // Create first KVS instance.
-        let kvs1 = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
-        // Create second KVS instance.
-        let kvs2 = kvs_provider.get(KvsParameters::new(InstanceId(1)))?;
+        // First KVS run.
+        let kvs1 = kvs_provider.init(KvsParameters::new(InstanceId(0)))?;
+        let kvs2 = kvs_provider.init(KvsParameters::new(InstanceId(1)))?;
 
         // Set values to both KVS instances.
         kvs1.set_value(&common_keyname, common_value)?;
@@ -90,8 +89,8 @@ fn cit_persistency_multiple_instances_same_id_common_value() -> Result<(), Error
     // Assertions.
     {
         // Second KVS run.
-        let kvs1 = kvs_provider.get(KvsParameters::new(InstanceId(0)))?;
-        let kvs2 = kvs_provider.get(KvsParameters::new(InstanceId(1)))?;
+        let kvs1 = kvs_provider.get(InstanceId(0))?;
+        let kvs2 = kvs_provider.get(InstanceId(1))?;
 
         assert_eq!(
             kvs1.get_value_as::<f64>(&common_keyname)?,
@@ -115,20 +114,19 @@ fn cit_persistency_multiple_instances_same_id_interfere() -> Result<(), ErrorCod
 
     // Temp directory.
     let dir = tempdir()?;
-    let dir_string = dir.path().to_string_lossy().to_string();
-    let kvs_provider = KvsProvider::new(Some(dir_string));
+    let dir_path = dir.path().to_path_buf();
+    let mut kvs_provider = KvsProvider::new(dir_path);
 
     // Values.
     let keyname = "number1".to_string();
     let value1 = 111.1;
     let value2 = 222.2;
 
-    let instance_id = InstanceId::new(0);
+    let instance_id = InstanceId(0);
     {
-        // Create first KVS instance.
-        let kvs1 = kvs_provider.get(KvsParameters::new(instance_id.clone()))?;
-        // Create second KVS instance.
-        let kvs2 = kvs_provider.get(KvsParameters::new(instance_id.clone()))?;
+        // First KVS run.
+        let kvs1 = kvs_provider.init(KvsParameters::new(instance_id.clone()))?;
+        let kvs2 = kvs_provider.init(KvsParameters::new(instance_id.clone()))?;
 
         // Set values to both KVS instances.
         kvs1.set_value(&keyname, value1)?;
@@ -138,8 +136,8 @@ fn cit_persistency_multiple_instances_same_id_interfere() -> Result<(), ErrorCod
     // Assertions.
     {
         // Second KVS run.
-        let kvs1 = kvs_provider.get(KvsParameters::new(instance_id.clone()))?;
-        let kvs2 = kvs_provider.get(KvsParameters::new(instance_id))?;
+        let kvs1 = kvs_provider.get(instance_id.clone())?;
+        let kvs2 = kvs_provider.get(instance_id)?;
 
         // Change value in first KVS instance.
         // This should affect the second KVS instance as well,

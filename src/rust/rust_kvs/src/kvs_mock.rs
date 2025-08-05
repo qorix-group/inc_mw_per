@@ -13,18 +13,17 @@ use crate::error_code::ErrorCode;
 use crate::kvs_api::{FlushOnExit, KvsApi, SnapshotId};
 use crate::kvs_value::{KvsMap, KvsValue};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct MockKvs {
-    pub map: Arc<Mutex<KvsMap>>,
+    pub kvs_map: KvsMap,
     pub fail: bool,
 }
 
 impl Default for MockKvs {
     fn default() -> Self {
         Self {
-            map: Arc::new(Mutex::new(KvsMap::new())),
+            kvs_map: KvsMap::new(),
             fail: false,
         }
     }
@@ -33,7 +32,7 @@ impl Default for MockKvs {
 impl MockKvs {
     pub fn new() -> Result<Self, ErrorCode> {
         Ok(MockKvs {
-            map: Arc::new(Mutex::new(KvsMap::new())),
+            kvs_map: KvsMap::new(),
             fail: false,
         })
     }
@@ -45,16 +44,15 @@ impl KvsApi for MockKvs {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
-        self.map.lock().unwrap().clear();
+        self.kvs_map.clear();
         Ok(())
     }
     fn reset_key(&self, key: &str) -> Result<(), ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
-        let mut map = self.map.lock().unwrap();
-        if map.contains_key(key) {
-            map.remove(key);
+        if self.kvs_map.contains_key(key) {
+            self.kvs_map.remove(key);
             Ok(())
         } else {
             Err(ErrorCode::KeyDefaultNotFound)
@@ -64,24 +62,19 @@ impl KvsApi for MockKvs {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
-        Ok(self.map.lock().unwrap().keys().cloned().collect())
+        Ok(self.kvs_map.keys().cloned().collect())
     }
     fn key_exists(&self, key: &str) -> Result<bool, ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
-        Ok(self.map.lock().unwrap().contains_key(key))
+        Ok(self.kvs_map.contains_key(key))
     }
     fn get_value(&self, key: &str) -> Result<KvsValue, ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
-        self.map
-            .lock()
-            .unwrap()
-            .get(key)
-            .cloned()
-            .ok_or(ErrorCode::KeyNotFound)
+        self.kvs_map.get(key).cloned().ok_or(ErrorCode::KeyNotFound)
     }
     fn get_value_as<T>(&self, key: &str) -> Result<T, ErrorCode>
     where
@@ -107,21 +100,21 @@ impl KvsApi for MockKvs {
         Ok(false)
     }
     fn set_value<S: Into<String>, V: Into<KvsValue>>(
-        &self,
+        &mut self,
         key: S,
         value: V,
     ) -> Result<(), ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
-        self.map.lock().unwrap().insert(key.into(), value.into());
+        self.kvs_map.insert(key.into(), value.into());
         Ok(())
     }
-    fn remove_key(&self, key: &str) -> Result<(), ErrorCode> {
+    fn remove_key(&mut self, key: &str) -> Result<(), ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
-        self.map.lock().unwrap().remove(key);
+        self.kvs_map.remove(key);
         Ok(())
     }
     fn flush(&self) -> Result<(), ErrorCode> {
@@ -139,7 +132,7 @@ impl KvsApi for MockKvs {
     fn snapshot_max_count() -> usize {
         0
     }
-    fn snapshot_restore(&self, _snapshot_id: &SnapshotId) -> Result<(), ErrorCode> {
+    fn snapshot_restore(&mut self, _snapshot_id: &SnapshotId) -> Result<(), ErrorCode> {
         if self.fail {
             return Err(ErrorCode::UnmappedError);
         }
@@ -160,8 +153,7 @@ impl KvsApi for MockKvs {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod kvs_mock_tests {
     use crate::kvs_api::KvsApi;
     use crate::kvs_api::SnapshotId;
     use crate::kvs_value::KvsValue;
@@ -169,7 +161,7 @@ mod tests {
     #[test]
     fn test_mock_kvs_pass_and_fail_cases() {
         // Pass case
-        let kvs = MockKvs::default();
+        let mut kvs = MockKvs::default();
         assert!(kvs.set_value("a", 1.0).is_ok());
         assert_eq!(kvs.get_value("a").unwrap(), KvsValue::from(1.0));
         assert_eq!(kvs.get_all_keys().unwrap(), vec!["a".to_string()]);
@@ -181,7 +173,7 @@ mod tests {
         assert!(kvs.reset().is_ok());
 
         // Failure case
-        let kvs_fail = MockKvs {
+        let mut kvs_fail = MockKvs {
             fail: true,
             ..Default::default()
         };
@@ -196,8 +188,8 @@ mod tests {
         assert!(kvs_fail.reset_key("a").is_err());
         assert!(kvs_fail.get_default_value("a").is_err());
         assert!(kvs_fail.is_value_default("a").is_err());
-        assert!(kvs_fail.get_kvs_file_path(&SnapshotId::new(0)).is_err());
-        assert!(kvs_fail.get_kvs_file_path(&SnapshotId::new(0)).is_err());
-        assert!(kvs_fail.snapshot_restore(&SnapshotId::new(0)).is_err());
+        assert!(kvs_fail.get_kvs_file_path(&SnapshotId(0)).is_err());
+        assert!(kvs_fail.get_kvs_file_path(&SnapshotId(0)).is_err());
+        assert!(kvs_fail.snapshot_restore(&SnapshotId(0)).is_err());
     }
 }

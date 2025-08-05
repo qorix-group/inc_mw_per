@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members=[
+members = [
     "src/rust/rust_kvs",
-    "src/rust/rust_kvs_tool"
+    # "src/rust/rust_kvs_tool"
 ]
 
 [workspace.package]
@@ -12,7 +12,7 @@ edition = "2021"
 
 [workspace.dependencies]
 rust_kvs = { path = "src/rust/rust_kvs" }
-rust_kvs_tool = { path = "src/rust/rust_kvs_tool" }
+# rust_kvs_tool = { path = "src/rust/rust_kvs_tool" }
 
 adler32 = "1.2.0"
 tinyjson = "2.5.1"

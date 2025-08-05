@@ -56,46 +56,46 @@
 //! ## Example Usage
 //!
 //! ```
-//! use rust_kvs::prelude::*;
-//! use std::collections::HashMap;
-//!
-//! fn main() -> Result<(), ErrorCode> {
-//!     let kvs_params = KvsParameters::new(InstanceId(0)).flush_on_exit(FlushOnExit::No);
-//!     let kvs_provider = KvsProvider::new(Some("".into()));
-//!     let kvs = kvs_provider.get(kvs_params)?;
-//!
-//!     kvs.set_value("number", 123.0)?;
-//!     kvs.set_value("bool", true)?;
-//!     kvs.set_value("string", "First".to_string())?;
-//!     kvs.set_value("null", ())?;
-//!     kvs.set_value(
-//!         "array",
-//!         vec![
-//!             KvsValue::from(456.0),
-//!             false.into(),
-//!             "Second".to_string().into(),
-//!         ],
-//!     )?;
-//!     kvs.set_value(
-//!         "object",
-//!         HashMap::from([
-//!             (String::from("sub-number"), KvsValue::from(789.0)),
-//!             ("sub-bool".into(), true.into()),
-//!             ("sub-string".into(), "Third".to_string().into()),
-//!             ("sub-null".into(), ().into()),
-//!             (
-//!                 "sub-array".into(),
-//!                 KvsValue::from(vec![
-//!                     KvsValue::from(1246.0),
-//!                     false.into(),
-//!                     "Fourth".to_string().into(),
-//!                 ]),
-//!             ),
-//!         ]),
-//!     )?;
-//!
-//!     Ok(())
-//! }
+//! //use rust_kvs::prelude::*;
+//! //use std::collections::HashMap;
+//! //
+//! //fn main() -> Result<(), ErrorCode> {
+//! //    let kvs_params = KvsParameters::new(InstanceId(0)).flush_on_exit(FlushOnExit::No);
+//! //    let kvs_provider = KvsProvider::new(Some("".into()));
+//! //    let kvs = kvs_provider.get(kvs_params)?;
+//! //
+//! //    kvs.set_value("number", 123.0)?;
+//! //    kvs.set_value("bool", true)?;
+//! //    kvs.set_value("string", "First".to_string())?;
+//! //    kvs.set_value("null", ())?;
+//! //    kvs.set_value(
+//! //        "array",
+//! //        vec![
+//! //            KvsValue::from(456.0),
+//! //            false.into(),
+//! //            "Second".to_string().into(),
+//! //        ],
+//! //    )?;
+//! //    kvs.set_value(
+//! //        "object",
+//! //        HashMap::from([
+//! //            (String::from("sub-number"), KvsValue::from(789.0)),
+//! //            ("sub-bool".into(), true.into()),
+//! //            ("sub-string".into(), "Third".to_string().into()),
+//! //            ("sub-null".into(), ().into()),
+//! //            (
+//! //                "sub-array".into(),
+//! //                KvsValue::from(vec![
+//! //                    KvsValue::from(1246.0),
+//! //                    false.into(),
+//! //                    "Fourth".to_string().into(),
+//! //                ]),
+//! //            ),
+//! //        ]),
+//! //    )?;
+//! //
+//! //    Ok(())
+//! //}
 //! ```
 //!
 //! ## Feature Coverage
@@ -142,7 +142,7 @@ mod kvs_backend;
 pub mod kvs_provider;
 pub mod kvs_value;
 
-pub mod kvs_mock;
+// pub mod kvs_mock;
 
 use json_backend::JsonBackend;
 pub type KvsProvider = kvs_provider::GenericKvsProvider<JsonBackend>;

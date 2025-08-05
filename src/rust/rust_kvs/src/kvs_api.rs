@@ -18,12 +18,8 @@ use crate::error_code::ErrorCode;
 use crate::kvs_value::KvsValue;
 
 /// Instance ID
-#[derive(Clone, Debug, PartialEq, Ord, PartialOrd, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
 pub struct InstanceId(pub usize);
-
-/// Snapshot ID
-#[derive(Clone, Debug, PartialEq)]
-pub struct SnapshotId(pub usize);
 
 impl fmt::Display for InstanceId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -31,28 +27,30 @@ impl fmt::Display for InstanceId {
     }
 }
 
+impl From<InstanceId> for usize {
+    fn from(value: InstanceId) -> Self {
+        value.0
+    }
+}
+
+/// Snapshot ID
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
+pub struct SnapshotId(pub usize);
+
 impl fmt::Display for SnapshotId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl InstanceId {
-    /// Create a new instance ID
-    pub fn new(id: usize) -> Self {
-        Self(id)
-    }
-}
-
-impl SnapshotId {
-    /// Create a new Snapshot ID
-    pub fn new(id: usize) -> Self {
-        SnapshotId(id)
+impl From<SnapshotId> for usize {
+    fn from(value: SnapshotId) -> Self {
+        value.0
     }
 }
 
 /// Defaults handling mode.
-#[derive(PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Defaults {
     /// Defaults are not loaded.
     Ignored,
@@ -65,7 +63,7 @@ pub enum Defaults {
 }
 
 /// KVS load mode.
-#[derive(PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KvsLoad {
     /// KVS is not loaded, current shared state is used.
     Ignored,
@@ -78,7 +76,7 @@ pub enum KvsLoad {
 }
 
 /// Flush on exit mode.
-#[derive(PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FlushOnExit {
     /// Do not flush on exit.
     No,
@@ -105,7 +103,8 @@ pub trait KvsApi {
         value: J,
     ) -> Result<(), ErrorCode>;
     fn remove_key(&self, key: &str) -> Result<(), ErrorCode>;
-    fn flush_on_exit(&self, flush_on_exit: FlushOnExit);
+    fn flush_on_exit(&self) -> Result<FlushOnExit, ErrorCode>;
+    fn set_flush_on_exit(&self, flush_on_exit: FlushOnExit) -> Result<(), ErrorCode>;
     fn flush(&self) -> Result<(), ErrorCode>;
     fn snapshot_count(&self) -> usize;
     fn snapshot_max_count() -> usize
@@ -114,4 +113,33 @@ pub trait KvsApi {
     fn snapshot_restore(&self, snapshot_id: &SnapshotId) -> Result<(), ErrorCode>;
     fn get_kvs_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode>;
     fn get_hash_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode>;
+}
+
+#[cfg(test)]
+mod kvs_api_tests {
+    use crate::kvs_api::{InstanceId, SnapshotId};
+
+    #[test]
+    fn test_instance_id_to_string() {
+        let id = InstanceId(123);
+        assert_eq!(id.to_string(), "123");
+    }
+
+    #[test]
+    fn test_instance_id_to_usize() {
+        let id = InstanceId(999);
+        assert_eq!(usize::from(id), 999);
+    }
+
+    #[test]
+    fn test_snapshot_id_fmt() {
+        let id = SnapshotId(4321);
+        assert_eq!(id.to_string(), "4321");
+    }
+
+    #[test]
+    fn test_snapshot_id_to_usize() {
+        let id = SnapshotId(0);
+        assert_eq!(usize::from(id), 0);
+    }
 }

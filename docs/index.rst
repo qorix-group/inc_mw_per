@@ -69,7 +69,7 @@ Example
 
    fn main() -> Result<(), ErrorCode> {
        let kvs = Kvs::open(
-           InstanceId::new(0),
+           InstanceId(0),
            OpenNeedDefaults::Optional,
            OpenNeedKvs::Optional)?;
 
