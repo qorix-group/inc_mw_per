@@ -20,6 +20,8 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "Persistency"
+project_url = "https://eclipse-score.github.io/score"
+project_prefix = "S-CORE_"
 version = "0.1.0"
 author = "S-CORE"
 

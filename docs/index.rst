@@ -114,7 +114,7 @@ This crate addresses or is influenced by the following specification requirement
 General Capabilities
 --------------------
 
-- :need:`SCORE_feat_req__kvs__cpp_rust_interoperability`
+- :need:`feat_req__persistency__cpp_rust_interop`
 - :need:`SCORE_feat_req__kvs__multiple_kvs`
 - :need:`SCORE_feat_req__kvs__tooling`
 - :need:`SCORE_feat_req__kvs__stable_api`
