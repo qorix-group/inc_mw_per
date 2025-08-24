@@ -148,6 +148,11 @@ use json_backend::JsonBackend;
 pub type KvsProvider = kvs_provider::GenericKvsProvider<JsonBackend>;
 pub type Kvs = kvs::GenericKvs<JsonBackend>;
 
+/// Maximum number of snapshots
+///
+/// Feature: `FEAT_REQ__KVS__snapshots`
+pub(crate) const KVS_MAX_SNAPSHOTS: usize = 3;
+
 /// Prelude module for convenient imports
 pub mod prelude {
     pub use crate::error_code::ErrorCode;

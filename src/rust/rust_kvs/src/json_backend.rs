@@ -13,6 +13,7 @@ use crate::error_code::ErrorCode;
 use crate::kvs_api::{InstanceId, SnapshotId};
 use crate::kvs_backend::{KvsBackend, KvsPathResolver};
 use crate::kvs_value::{KvsMap, KvsValue};
+use crate::KVS_MAX_SNAPSHOTS;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -164,6 +165,46 @@ impl JsonBackend {
     fn stringify(val: &JsonValue) -> Result<String, ErrorCode> {
         val.stringify().map_err(ErrorCode::from)
     }
+
+    /// Rotate snapshots
+    ///
+    /// # Features
+    ///   * `FEAT_REQ__KVS__snapshots`
+    ///
+    /// # Return Values
+    ///   * Ok: Rotation successful, also if no rotation was needed
+    ///   * `ErrorCode::UnmappedError`: Unmapped error
+    fn snapshot_rotate(working_dir: &Path, instance_id: &InstanceId) -> Result<(), ErrorCode> {
+        for idx in (1..=Self::snapshot_max_count()).rev() {
+            let old_snapshot_id = SnapshotId(idx - 1);
+            let new_snapshot_id = SnapshotId(idx);
+
+            let hash_path_old = Self::hash_file_path(working_dir, instance_id, &old_snapshot_id);
+            let hash_path_new = Self::hash_file_path(working_dir, instance_id, &new_snapshot_id);
+            let snap_name_old = Self::kvs_file_name(instance_id, &old_snapshot_id);
+            let snap_path_old = Self::kvs_file_path(working_dir, instance_id, &old_snapshot_id);
+            let snap_name_new = Self::kvs_file_name(instance_id, &new_snapshot_id);
+            let snap_path_new = Self::kvs_file_path(working_dir, instance_id, &new_snapshot_id);
+
+            println!("rotating: {snap_name_old} -> {snap_name_new}");
+
+            let res = fs::rename(hash_path_old, hash_path_new);
+            if let Err(err) = res {
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    return Err(err.into());
+                } else {
+                    continue;
+                }
+            }
+
+            let res = fs::rename(snap_path_old, snap_path_new);
+            if let Err(err) = res {
+                return Err(err.into());
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Check path have correct extension.
@@ -245,6 +286,67 @@ impl KvsBackend for JsonBackend {
         }
 
         Ok(())
+    }
+
+    fn flush(
+        kvs_map: &KvsMap,
+        working_dir: &Path,
+        instance_id: &InstanceId,
+    ) -> Result<(), ErrorCode> {
+        // Rotate previous snapshots.
+        Self::snapshot_rotate(working_dir, instance_id)?;
+
+        // Save new snapshot with snapshot ID = 0.
+        let snapshot_id = SnapshotId(0);
+        let kvs_path = Self::kvs_file_path(working_dir, instance_id, &snapshot_id);
+        let hash_path = Self::hash_file_path(working_dir, instance_id, &snapshot_id);
+        Self::save_kvs(kvs_map, &kvs_path, Some(&hash_path))?;
+
+        Ok(())
+    }
+
+    fn snapshot_count(working_dir: &Path, instance_id: &InstanceId) -> usize {
+        let mut count = 0;
+
+        for idx in 0..Self::snapshot_max_count() {
+            let snapshot_id = SnapshotId(idx);
+            let snapshot_path = Self::kvs_file_path(working_dir, instance_id, &snapshot_id);
+            if !snapshot_path.exists() {
+                break;
+            }
+
+            count += 1;
+        }
+
+        count
+    }
+
+    fn snapshot_max_count() -> usize {
+        KVS_MAX_SNAPSHOTS
+    }
+
+    fn snapshot_restore(
+        working_dir: &Path,
+        instance_id: &InstanceId,
+        snapshot_id: &SnapshotId,
+    ) -> Result<KvsMap, ErrorCode> {
+        // Fail if given snapshot ID is for current KVS.
+        if *snapshot_id == SnapshotId(0) {
+            eprintln!("error: tried to restore current KVS as snapshot");
+            return Err(ErrorCode::InvalidSnapshotId);
+        }
+
+        // Fail if snapshot doesn't exist.
+        if Self::snapshot_count(working_dir, instance_id) < snapshot_id.0 {
+            eprintln!("error: tried to restore a non-existing snapshot");
+            return Err(ErrorCode::InvalidSnapshotId);
+        }
+
+        let kvs_path = Self::kvs_file_path(working_dir, instance_id, snapshot_id);
+        let hash_path = Self::hash_file_path(working_dir, instance_id, snapshot_id);
+        let kvs_map = Self::load_kvs(&kvs_path, Some(&hash_path))?;
+
+        Ok(kvs_map)
     }
 }
 

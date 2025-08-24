@@ -9,13 +9,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::PathBuf;
-
-//core and alloc libs
-use core::fmt;
-
 use crate::error_code::ErrorCode;
 use crate::kvs_value::KvsValue;
+use core::fmt;
 
 /// Instance ID
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd)]
@@ -111,8 +107,6 @@ pub trait KvsApi {
     where
         Self: Sized;
     fn snapshot_restore(&self, snapshot_id: &SnapshotId) -> Result<(), ErrorCode>;
-    fn get_kvs_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode>;
-    fn get_hash_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode>;
 }
 
 #[cfg(test)]

@@ -9,7 +9,6 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fs;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -19,11 +18,6 @@ use crate::kvs_api::{FlushOnExit, InstanceId, KvsApi, SnapshotId};
 use crate::kvs_backend::{KvsBackend, KvsPathResolver};
 use crate::kvs_provider::GenericKvsInner;
 use crate::kvs_value::{KvsMap, KvsValue};
-
-/// Maximum number of snapshots
-///
-/// Feature: `FEAT_REQ__KVS__snapshots`
-const KVS_MAX_SNAPSHOTS: usize = 3;
 
 /// Key-value-storage data
 pub struct GenericKvs<Backend: KvsBackend, PathResolver: KvsPathResolver = Backend> {
@@ -58,54 +52,38 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> GenericKvs<Backend, Pat
         }
     }
 
-    /// Rotate snapshots
+    /// Return the KVS-filename for a given snapshot ID
     ///
-    /// # Features
-    ///   * `FEAT_REQ__KVS__snapshots`
+    /// # Parameters
+    ///   * `id`: Snapshot ID to get the filename for
     ///
     /// # Return Values
-    ///   * Ok: Rotation successful, also if no rotation was needed
-    ///   * `ErrorCode::UnmappedError`: Unmapped error
-    fn snapshot_rotate(&self) -> Result<(), ErrorCode> {
-        for idx in (1..=KVS_MAX_SNAPSHOTS).rev() {
-            let old_snapshot_id = SnapshotId(idx - 1);
-            let new_snapshot_id = SnapshotId(idx);
-
-            let hash_path_old = PathResolver::hash_file_path(
-                &self.working_dir,
-                &self.instance_id,
-                &old_snapshot_id,
-            );
-            let hash_path_new = PathResolver::hash_file_path(
-                &self.working_dir,
-                &self.instance_id,
-                &new_snapshot_id,
-            );
-            let snap_name_old = PathResolver::kvs_file_name(&self.instance_id, &old_snapshot_id);
-            let snap_path_old =
-                PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &old_snapshot_id);
-            let snap_name_new = PathResolver::kvs_file_name(&self.instance_id, &new_snapshot_id);
-            let snap_path_new =
-                PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &new_snapshot_id);
-
-            println!("rotating: {snap_name_old} -> {snap_name_new}");
-
-            let res = fs::rename(hash_path_old, hash_path_new);
-            if let Err(err) = res {
-                if err.kind() != std::io::ErrorKind::NotFound {
-                    return Err(err.into());
-                } else {
-                    continue;
-                }
-            }
-
-            let res = fs::rename(snap_path_old, snap_path_new);
-            if let Err(err) = res {
-                return Err(err.into());
-            }
+    ///   * `Ok`: Filename for ID
+    ///   * `ErrorCode::FileNotFound`: KVS file for snapshot ID not found
+    pub fn get_kvs_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
+        let path = PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, snapshot_id);
+        if !path.exists() {
+            Err(ErrorCode::FileNotFound)
+        } else {
+            Ok(path)
         }
+    }
 
-        Ok(())
+    /// Return the hash-filename for a given snapshot ID
+    ///
+    /// # Parameters
+    ///   * `id`: Snapshot ID to get the hash filename for
+    ///
+    /// # Return Values
+    ///   * `Ok`: Hash filename for ID
+    ///   * `ErrorCode::FileNotFound`: Hash file for snapshot ID not found
+    pub fn get_hash_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
+        let path = PathResolver::hash_file_path(&self.working_dir, &self.instance_id, snapshot_id);
+        if !path.exists() {
+            Err(ErrorCode::FileNotFound)
+        } else {
+            Ok(path)
+        }
     }
 }
 
@@ -362,20 +340,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
     ///   * `ErrorCode::UnmappedError`: Unmapped error
     fn flush(&self) -> Result<(), ErrorCode> {
         let kvs_inner = self.kvs_inner.lock()?;
-        self.snapshot_rotate().map_err(|e| {
-            eprintln!("error: snapshot_rotate failed: {e:?}");
-            e
-        })?;
-        let snapshot_id = SnapshotId(0);
-        let kvs_path =
-            PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &snapshot_id);
-        let hash_path =
-            PathResolver::hash_file_path(&self.working_dir, &self.instance_id, &snapshot_id);
-        Backend::save_kvs(&kvs_inner.kvs_map, &kvs_path, Some(&hash_path)).map_err(|e| {
-            eprintln!("error: save_kvs failed: {e:?}");
-            e
-        })?;
-        Ok(())
+        Backend::flush(&kvs_inner.kvs_map, &self.working_dir, &self.instance_id)
     }
 
     /// Get the count of snapshots
@@ -383,20 +348,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
     /// # Return Values
     ///   * usize: Count of found snapshots
     fn snapshot_count(&self) -> usize {
-        let mut count = 0;
-
-        for idx in 0..KVS_MAX_SNAPSHOTS {
-            let snapshot_id = SnapshotId(idx);
-            let snapshot_path =
-                PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, &snapshot_id);
-            if !snapshot_path.exists() {
-                break;
-            }
-
-            count += 1;
-        }
-
-        count
+        Backend::snapshot_count(&self.working_dir, &self.instance_id)
     }
 
     /// Return maximum snapshot count
@@ -404,7 +356,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
     /// # Return Values
     ///   * usize: Maximum count of snapshots
     fn snapshot_max_count() -> usize {
-        KVS_MAX_SNAPSHOTS
+        Backend::snapshot_max_count()
     }
 
     /// Recover key-value-storage from snapshot
@@ -427,58 +379,9 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
     ///   * `ErrorCode::UnmappedError`: Generic error
     fn snapshot_restore(&self, snapshot_id: &SnapshotId) -> Result<(), ErrorCode> {
         let mut kvs_inner = self.kvs_inner.lock()?;
-        // fail if the snapshot ID is the current KVS
-        if *snapshot_id == SnapshotId(0) {
-            eprintln!("error: tried to restore current KVS as snapshot");
-            return Err(ErrorCode::InvalidSnapshotId);
-        }
-
-        if self.snapshot_count() < snapshot_id.0 {
-            eprintln!("error: tried to restore a non-existing snapshot");
-            return Err(ErrorCode::InvalidSnapshotId);
-        }
-
-        let kvs_path =
-            PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, snapshot_id);
-        let hash_path =
-            PathResolver::hash_file_path(&self.working_dir, &self.instance_id, snapshot_id);
-        kvs_inner.kvs_map = Backend::load_kvs(&kvs_path, Some(&hash_path))?;
-
+        kvs_inner.kvs_map =
+            Backend::snapshot_restore(&self.working_dir, &self.instance_id, snapshot_id)?;
         Ok(())
-    }
-
-    /// Return the KVS-filename for a given snapshot ID
-    ///
-    /// # Parameters
-    ///   * `id`: Snapshot ID to get the filename for
-    ///
-    /// # Return Values
-    ///   * `Ok`: Filename for ID
-    ///   * `ErrorCode::FileNotFound`: KVS file for snapshot ID not found
-    fn get_kvs_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
-        let path = PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, snapshot_id);
-        if !path.exists() {
-            Err(ErrorCode::FileNotFound)
-        } else {
-            Ok(path)
-        }
-    }
-
-    /// Return the hash-filename for a given snapshot ID
-    ///
-    /// # Parameters
-    ///   * `id`: Snapshot ID to get the hash filename for
-    ///
-    /// # Return Values
-    ///   * `Ok`: Hash filename for ID
-    ///   * `ErrorCode::FileNotFound`: Hash file for snapshot ID not found
-    fn get_hash_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
-        let path = PathResolver::hash_file_path(&self.working_dir, &self.instance_id, snapshot_id);
-        if !path.exists() {
-            Err(ErrorCode::FileNotFound)
-        } else {
-            Ok(path)
-        }
     }
 }
 
@@ -502,12 +405,13 @@ mod kvs_tests {
 
     use crate::error_code::ErrorCode;
     use crate::json_backend::JsonBackend;
-    use crate::kvs::{GenericKvs, KVS_MAX_SNAPSHOTS};
+    use crate::kvs::GenericKvs;
     use crate::kvs_api::{FlushOnExit, InstanceId, KvsApi, SnapshotId};
     use crate::kvs_backend::{KvsBackend, KvsPathResolver};
     use crate::kvs_provider::GenericKvsInner;
     use crate::kvs_value::KvsMap;
     use crate::prelude::KvsValue;
+    use crate::KVS_MAX_SNAPSHOTS;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
@@ -529,6 +433,30 @@ mod kvs_tests {
             _kvs_path: &std::path::Path,
             _hash_path: Option<&PathBuf>,
         ) -> Result<(), ErrorCode> {
+            unimplemented!()
+        }
+
+        fn flush(
+            _kvs_map: &KvsMap,
+            _working_dir: &std::path::Path,
+            _instance_id: &InstanceId,
+        ) -> Result<(), ErrorCode> {
+            unimplemented!()
+        }
+
+        fn snapshot_count(_working_dir: &std::path::Path, _instance_id: &InstanceId) -> usize {
+            unimplemented!()
+        }
+
+        fn snapshot_max_count() -> usize {
+            KVS_MAX_SNAPSHOTS
+        }
+
+        fn snapshot_restore(
+            _working_dir: &std::path::Path,
+            _instance_id: &InstanceId,
+            _snapshot_id: &SnapshotId,
+        ) -> Result<KvsMap, ErrorCode> {
             unimplemented!()
         }
     }

@@ -26,6 +26,19 @@ pub trait KvsBackend {
         kvs_path: &Path,
         hash_path: Option<&PathBuf>,
     ) -> Result<(), ErrorCode>;
+
+    /// Flush the KvsMap to persistent storage.
+    /// Snapshots are rotated and current state is stored as first (0).
+    fn flush(kvs_map: &KvsMap, working_dir: &Path, instance_id: &InstanceId) -> Result<(), ErrorCode>;
+
+    /// Count snapshots available in given directory and with given instance ID.
+    fn snapshot_count(working_dir: &Path, instance_id: &InstanceId) -> usize;
+
+    /// Max number of snapshots.
+    fn snapshot_max_count() -> usize;
+
+    /// Restore snapshot with given ID.
+    fn snapshot_restore(working_dir: &Path, instance_id: &InstanceId, snapshot_id: &SnapshotId) -> Result<KvsMap, ErrorCode>;
 }
 
 /// KVS path resolver interface.
