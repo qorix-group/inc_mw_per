@@ -9,46 +9,36 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-use std::marker::PhantomData;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-
 use crate::error_code::ErrorCode;
 use crate::kvs_api::{FlushOnExit, InstanceId, KvsApi, SnapshotId};
 use crate::kvs_backend::{KvsBackend, KvsPathResolver};
 use crate::kvs_provider::GenericKvsInner;
 use crate::kvs_value::{KvsMap, KvsValue};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 /// Key-value-storage data
-pub struct GenericKvs<Backend: KvsBackend, PathResolver: KvsPathResolver = Backend> {
+pub struct GenericKvs<Backend: KvsBackend + KvsPathResolver> {
     /// Instance ID.
     instance_id: InstanceId,
-
-    /// Working directory.
-    working_dir: PathBuf,
 
     /// Inner storage data representation.
     kvs_inner: Arc<Mutex<GenericKvsInner>>,
 
-    /// Marker for `Backend`.
-    _backend_marker: PhantomData<Backend>,
-
-    /// Marker for `PathResolver`.
-    _path_resolver_marker: PhantomData<PathResolver>,
+    /// Backend object.
+    backend: Backend,
 }
 
-impl<Backend: KvsBackend, PathResolver: KvsPathResolver> GenericKvs<Backend, PathResolver> {
+impl<Backend: KvsBackend + KvsPathResolver> GenericKvs<Backend> {
     pub(crate) fn new(
         instance_id: InstanceId,
-        working_dir: PathBuf,
         kvs_inner: Arc<Mutex<GenericKvsInner>>,
+        backend: Backend,
     ) -> Self {
         Self {
             instance_id,
-            working_dir,
             kvs_inner,
-            _backend_marker: PhantomData,
-            _path_resolver_marker: PhantomData,
+            backend,
         }
     }
 
@@ -61,7 +51,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> GenericKvs<Backend, Pat
     ///   * `Ok`: Filename for ID
     ///   * `ErrorCode::FileNotFound`: KVS file for snapshot ID not found
     pub fn get_kvs_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
-        let path = PathResolver::kvs_file_path(&self.working_dir, &self.instance_id, snapshot_id);
+        let path = self.backend.kvs_file_path(&self.instance_id, snapshot_id);
         if !path.exists() {
             Err(ErrorCode::FileNotFound)
         } else {
@@ -78,7 +68,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> GenericKvs<Backend, Pat
     ///   * `Ok`: Hash filename for ID
     ///   * `ErrorCode::FileNotFound`: Hash file for snapshot ID not found
     pub fn get_hash_file_path(&self, snapshot_id: &SnapshotId) -> Result<PathBuf, ErrorCode> {
-        let path = PathResolver::hash_file_path(&self.working_dir, &self.instance_id, snapshot_id);
+        let path = self.backend.hash_file_path(&self.instance_id, snapshot_id);
         if !path.exists() {
             Err(ErrorCode::FileNotFound)
         } else {
@@ -87,9 +77,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> GenericKvs<Backend, Pat
     }
 }
 
-impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
-    for GenericKvs<Backend, PathResolver>
-{
+impl<Backend: KvsBackend + KvsPathResolver> KvsApi for GenericKvs<Backend> {
     /// Get current flush on exit behavior.
     ///
     /// # Return Values
@@ -340,7 +328,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
     ///   * `ErrorCode::UnmappedError`: Unmapped error
     fn flush(&self) -> Result<(), ErrorCode> {
         let kvs_inner = self.kvs_inner.lock()?;
-        Backend::flush(&kvs_inner.kvs_map, &self.working_dir, &self.instance_id)
+        self.backend.flush(&kvs_inner.kvs_map, &self.instance_id)
     }
 
     /// Get the count of snapshots
@@ -348,7 +336,7 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
     /// # Return Values
     ///   * usize: Count of found snapshots
     fn snapshot_count(&self) -> usize {
-        Backend::snapshot_count(&self.working_dir, &self.instance_id)
+        self.backend.snapshot_count(&self.instance_id)
     }
 
     /// Return maximum snapshot count
@@ -379,15 +367,14 @@ impl<Backend: KvsBackend, PathResolver: KvsPathResolver> KvsApi
     ///   * `ErrorCode::UnmappedError`: Generic error
     fn snapshot_restore(&self, snapshot_id: &SnapshotId) -> Result<(), ErrorCode> {
         let mut kvs_inner = self.kvs_inner.lock()?;
-        kvs_inner.kvs_map =
-            Backend::snapshot_restore(&self.working_dir, &self.instance_id, snapshot_id)?;
+        kvs_inner.kvs_map = self
+            .backend
+            .snapshot_restore(&self.instance_id, snapshot_id)?;
         Ok(())
     }
 }
 
-impl<Backend: KvsBackend, PathResolver: KvsPathResolver> Drop
-    for GenericKvs<Backend, PathResolver>
-{
+impl<Backend: KvsBackend + KvsPathResolver> Drop for GenericKvs<Backend> {
     fn drop(&mut self) {
         if self.flush_on_exit().unwrap() == FlushOnExit::Yes {
             if let Err(e) = self.flush() {
@@ -412,7 +399,7 @@ mod kvs_tests {
     use crate::kvs_value::KvsMap;
     use crate::prelude::KvsValue;
     use crate::KVS_MAX_SNAPSHOTS;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
 
@@ -422,29 +409,22 @@ mod kvs_tests {
 
     impl KvsBackend for MockBackend {
         fn load_kvs(
-            _kvs_path: &std::path::Path,
-            _hash_path: Option<&PathBuf>,
+            &self,
+            _instance_id: &InstanceId,
+            _snapshot_id: &SnapshotId,
         ) -> Result<KvsMap, ErrorCode> {
             unimplemented!()
         }
 
-        fn save_kvs(
-            _kvs_map: &KvsMap,
-            _kvs_path: &std::path::Path,
-            _hash_path: Option<&PathBuf>,
-        ) -> Result<(), ErrorCode> {
+        fn load_defaults(&self, _instance_id: &InstanceId) -> Result<KvsMap, ErrorCode> {
             unimplemented!()
         }
 
-        fn flush(
-            _kvs_map: &KvsMap,
-            _working_dir: &std::path::Path,
-            _instance_id: &InstanceId,
-        ) -> Result<(), ErrorCode> {
+        fn flush(&self, _kvs_map: &KvsMap, _instance_id: &InstanceId) -> Result<(), ErrorCode> {
             unimplemented!()
         }
 
-        fn snapshot_count(_working_dir: &std::path::Path, _instance_id: &InstanceId) -> usize {
+        fn snapshot_count(&self, _instance_id: &InstanceId) -> usize {
             unimplemented!()
         }
 
@@ -453,7 +433,7 @@ mod kvs_tests {
         }
 
         fn snapshot_restore(
-            _working_dir: &std::path::Path,
+            &self,
             _instance_id: &InstanceId,
             _snapshot_id: &SnapshotId,
         ) -> Result<KvsMap, ErrorCode> {
@@ -462,44 +442,31 @@ mod kvs_tests {
     }
 
     impl KvsPathResolver for MockBackend {
-        fn kvs_file_name(
-            _instance_id: &InstanceId,
-            _snapshot_id: &crate::prelude::SnapshotId,
-        ) -> String {
+        fn new(_working_dir: &Path) -> Self {
+            Self
+        }
+
+        fn kvs_file_name(&self, _instance_id: &InstanceId, _snapshot_id: &SnapshotId) -> String {
             unimplemented!()
         }
 
-        fn kvs_file_path(
-            _working_dir: &std::path::Path,
-            _instance_id: &InstanceId,
-            _snapshot_id: &crate::prelude::SnapshotId,
-        ) -> PathBuf {
+        fn kvs_file_path(&self, _instance_id: &InstanceId, _snapshot_id: &SnapshotId) -> PathBuf {
             unimplemented!()
         }
 
-        fn hash_file_name(
-            _instance_id: &InstanceId,
-            _snapshot_id: &crate::prelude::SnapshotId,
-        ) -> String {
+        fn hash_file_name(&self, _instance_id: &InstanceId, _snapshot_id: &SnapshotId) -> String {
             unimplemented!()
         }
 
-        fn hash_file_path(
-            _working_dir: &std::path::Path,
-            _instance_id: &InstanceId,
-            _snapshot_id: &crate::prelude::SnapshotId,
-        ) -> PathBuf {
+        fn hash_file_path(&self, _instance_id: &InstanceId, _snapshot_id: &SnapshotId) -> PathBuf {
             unimplemented!()
         }
 
-        fn defaults_file_name(_instance_id: &InstanceId) -> String {
+        fn defaults_file_name(&self, _instance_id: &InstanceId) -> String {
             unimplemented!()
         }
 
-        fn defaults_file_path(
-            _working_dir: &std::path::Path,
-            _instance_id: &InstanceId,
-        ) -> PathBuf {
+        fn defaults_file_path(&self, _instance_id: &InstanceId) -> PathBuf {
             unimplemented!()
         }
     }
@@ -515,7 +482,8 @@ mod kvs_tests {
             defaults_map,
             flush_on_exit: FlushOnExit::No,
         }));
-        GenericKvs::<B>::new(instance_id, working_dir, kvs_inner)
+        let backend = B::new(&working_dir);
+        GenericKvs::<B>::new(instance_id, kvs_inner, backend)
     }
 
     #[test]
@@ -1049,9 +1017,10 @@ mod kvs_tests {
             kvs.set_value("key", "value").unwrap();
         }
 
-        let kvs_path = JsonBackend::kvs_file_path(&dir_path, &InstanceId(1), &SnapshotId(0));
+        let backend = JsonBackend::new(&dir_path);
+        let kvs_path = backend.kvs_file_path(&InstanceId(1), &SnapshotId(0));
         assert!(kvs_path.exists());
-        let hash_path = JsonBackend::hash_file_path(&dir_path, &InstanceId(1), &SnapshotId(0));
+        let hash_path = backend.hash_file_path(&InstanceId(1), &SnapshotId(0));
         assert!(hash_path.exists());
     }
 }
