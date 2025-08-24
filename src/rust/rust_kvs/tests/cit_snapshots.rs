@@ -5,7 +5,7 @@
 //!   The KVS system shall support explicit creation of snapshots identified by unique IDs and allow rollback to previous snapshots.
 //!   Snapshots shall also be deletable.
 
-use rust_kvs::prelude::*;
+use rust_kvs::{kvs_backend::KvsPathResolver, prelude::*};
 use std::cmp::min;
 use tempfile::tempdir;
 
@@ -160,27 +160,11 @@ fn cit_snapshots_get_kvs_filename_existing_snapshot() -> Result<(), ErrorCode> {
         instance_id.clone(),
         last_snapshot_index
     ));
-    let actual = kvs.get_kvs_file_path(&SnapshotId(last_snapshot_index))?;
+    let actual = kvs
+        .backend()
+        .kvs_file_path(&SnapshotId(last_snapshot_index));
     assert_eq!(expected, actual);
-    Ok(())
-}
-
-#[test]
-fn cit_snapshots_get_kvs_filename_nonexisting_snapshot() -> Result<(), ErrorCode> {
-    // Temp directory.
-    let dir = tempdir()?;
-    let dir_path = dir.path().to_path_buf();
-    let mut kvs_provider = KvsProvider::new(dir_path);
-
-    // Arrange.
-    let instance_id = InstanceId(0);
-    let num_snapshots = 2;
-    let kvs = init_kvs(&mut kvs_provider, instance_id.clone(), num_snapshots)?;
-
-    // Assert.
-    let invalid_snapshot_index = num_snapshots;
-    let result = kvs.get_kvs_file_path(&SnapshotId(invalid_snapshot_index));
-    assert!(result.is_err_and(|e| e == ErrorCode::FileNotFound));
+    assert!(actual.exists());
     Ok(())
 }
 
@@ -203,26 +187,10 @@ fn cit_snapshots_get_hash_filename_existing_snapshot() -> Result<(), ErrorCode> 
         instance_id.clone(),
         last_snapshot_index
     ));
-    let actual = kvs.get_hash_file_path(&SnapshotId(last_snapshot_index))?;
+    let actual = kvs
+        .backend()
+        .hash_file_path(&SnapshotId(last_snapshot_index));
     assert_eq!(expected, actual);
-    Ok(())
-}
-
-#[test]
-fn cit_snapshots_get_hash_filename_nonexisting_snapshot() -> Result<(), ErrorCode> {
-    // Temp directory.
-    let dir = tempdir()?;
-    let dir_path = dir.path().to_path_buf();
-    let mut kvs_provider = KvsProvider::new(dir_path);
-
-    // Arrange.
-    let instance_id = InstanceId(0);
-    let num_snapshots = 2;
-    let kvs = init_kvs(&mut kvs_provider, instance_id.clone(), num_snapshots)?;
-
-    // Assert.
-    let invalid_snapshot_index = num_snapshots;
-    let result = kvs.get_hash_file_path(&SnapshotId(invalid_snapshot_index));
-    assert!(result.is_err_and(|e| e == ErrorCode::FileNotFound));
+    assert!(actual.exists());
     Ok(())
 }

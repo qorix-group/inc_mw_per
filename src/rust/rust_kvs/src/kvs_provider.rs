@@ -128,20 +128,20 @@ impl<Backend: KvsBackend + KvsPathResolver> GenericKvsProvider<Backend> {
         }
 
         // Create backend object.
-        let backend = Backend::new(&self.working_dir);
+        let backend = Backend::new(instance_id, &self.working_dir);
 
         // Initialize with provided parameters.
         // Load file containing defaults.
         let defaults_map = match params.defaults {
             Defaults::Ignored => KvsMap::new(),
             Defaults::Optional => {
-                if backend.defaults_file_path(&instance_id).exists() {
-                    backend.load_defaults(&instance_id)?
+                if backend.defaults_file_path().exists() {
+                    backend.load_defaults()?
                 } else {
                     KvsMap::new()
                 }
             }
-            Defaults::Required => backend.load_defaults(&instance_id)?,
+            Defaults::Required => backend.load_defaults()?,
         };
 
         // Load KVS and hash files.
@@ -149,13 +149,13 @@ impl<Backend: KvsBackend + KvsPathResolver> GenericKvsProvider<Backend> {
         let kvs_map = match params.kvs_load {
             KvsLoad::Ignored => KvsMap::new(),
             KvsLoad::Optional => {
-                if backend.kvs_file_path(&instance_id, &snapshot_id).exists() {
-                    backend.load_kvs(&instance_id, &snapshot_id)?
+                if backend.kvs_file_path(&snapshot_id).exists() {
+                    backend.load_kvs(&snapshot_id)?
                 } else {
                     KvsMap::new()
                 }
             }
-            KvsLoad::Required => backend.load_kvs(&instance_id, &snapshot_id)?,
+            KvsLoad::Required => backend.load_kvs(&snapshot_id)?,
         };
 
         // Initialize entry in pool.
@@ -170,7 +170,7 @@ impl<Backend: KvsBackend + KvsPathResolver> GenericKvsProvider<Backend> {
             flush_on_exit: params.flush_on_exit,
         })));
 
-        Ok(GenericKvs::new(instance_id, kvs_inner.clone(), backend))
+        Ok(GenericKvs::new(kvs_inner.clone(), backend))
     }
 
     pub fn get(&self, instance_id: InstanceId) -> Result<GenericKvs<Backend>, ErrorCode> {
@@ -180,9 +180,8 @@ impl<Backend: KvsBackend + KvsPathResolver> GenericKvsProvider<Backend> {
         match self.kvs_pool.get(instance_id_index) {
             Some(entry) => match entry {
                 Some(kvs_inner) => Ok(GenericKvs::new(
-                    instance_id,
                     kvs_inner.clone(),
-                    Backend::new(&self.working_dir.clone()),
+                    Backend::new(instance_id, &self.working_dir.clone()),
                 )),
                 None => Err(ErrorCode::InstanceNotInitialized),
             },
@@ -333,7 +332,8 @@ mod kvs_provider_tests {
 
     /// Generate and store file containing example default values.
     fn create_defaults_file(working_dir: &Path, instance_id: &InstanceId) {
-        let defaults_file_path = TestBackend::new(working_dir).defaults_file_path(instance_id);
+        let defaults_file_path =
+            TestBackend::new(instance_id.clone(), working_dir).defaults_file_path();
 
         let content: HashMap<String, JsonValue> = HashMap::from([
             (
@@ -491,7 +491,7 @@ mod kvs_provider_tests {
         let mut kvs_provider = TestKvsProvider::new(dir_path.clone());
         create_kvs_files(&dir_path, &instance_id);
         std::fs::remove_file(
-            TestBackend::new(&dir_path).kvs_file_path(&instance_id, &SnapshotId(0)),
+            TestBackend::new(instance_id, &dir_path).kvs_file_path(&SnapshotId(0)),
         )
         .unwrap();
 
@@ -510,7 +510,7 @@ mod kvs_provider_tests {
         let mut kvs_provider = TestKvsProvider::new(dir_path.clone());
         create_kvs_files(&dir_path, &instance_id);
         std::fs::remove_file(
-            TestBackend::new(&dir_path).hash_file_path(&instance_id, &SnapshotId(0)),
+            TestBackend::new(instance_id, &dir_path).hash_file_path(&SnapshotId(0)),
         )
         .unwrap();
 
@@ -554,7 +554,7 @@ mod kvs_provider_tests {
         let mut kvs_provider = TestKvsProvider::new(dir_path.clone());
         create_kvs_files(&dir_path, &instance_id);
         std::fs::remove_file(
-            TestBackend::new(&dir_path).kvs_file_path(&instance_id, &SnapshotId(0)),
+            TestBackend::new(instance_id, &dir_path).kvs_file_path(&SnapshotId(0)),
         )
         .unwrap();
 
@@ -571,7 +571,7 @@ mod kvs_provider_tests {
         let mut kvs_provider = TestKvsProvider::new(dir_path.clone());
         create_kvs_files(&dir_path, &instance_id);
         std::fs::remove_file(
-            TestBackend::new(&dir_path).hash_file_path(&instance_id, &SnapshotId(0)),
+            TestBackend::new(instance_id, &dir_path).hash_file_path(&SnapshotId(0)),
         )
         .unwrap();
 

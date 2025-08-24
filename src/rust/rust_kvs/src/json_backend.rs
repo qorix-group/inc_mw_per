@@ -153,6 +153,7 @@ impl From<JsonGenerateError> for ErrorCode {
 
 /// KVS backend implementation based on TinyJSON.
 pub struct JsonBackend {
+    instance_id: InstanceId,
     working_dir: PathBuf,
 }
 
@@ -173,17 +174,17 @@ impl JsonBackend {
     /// # Return Values
     ///   * Ok: Rotation successful, also if no rotation was needed
     ///   * `ErrorCode::UnmappedError`: Unmapped error
-    fn snapshot_rotate(&self, instance_id: &InstanceId) -> Result<(), ErrorCode> {
+    fn snapshot_rotate(&self) -> Result<(), ErrorCode> {
         for idx in (1..=Self::snapshot_max_count()).rev() {
             let old_snapshot_id = SnapshotId(idx - 1);
             let new_snapshot_id = SnapshotId(idx);
 
-            let hash_path_old = self.hash_file_path(instance_id, &old_snapshot_id);
-            let hash_path_new = self.hash_file_path(instance_id, &new_snapshot_id);
-            let snap_name_old = self.kvs_file_name(instance_id, &old_snapshot_id);
-            let snap_path_old = self.kvs_file_path(instance_id, &old_snapshot_id);
-            let snap_name_new = self.kvs_file_name(instance_id, &new_snapshot_id);
-            let snap_path_new = self.kvs_file_path(instance_id, &new_snapshot_id);
+            let hash_path_old = self.hash_file_path(&old_snapshot_id);
+            let hash_path_new = self.hash_file_path(&new_snapshot_id);
+            let snap_name_old = self.kvs_file_name(&old_snapshot_id);
+            let snap_path_old = self.kvs_file_path(&old_snapshot_id);
+            let snap_name_new = self.kvs_file_name(&new_snapshot_id);
+            let snap_path_new = self.kvs_file_path(&new_snapshot_id);
 
             println!("rotating: {snap_name_old} -> {snap_name_new}");
 
@@ -285,40 +286,36 @@ impl JsonBackend {
 }
 
 impl KvsBackend for JsonBackend {
-    fn load_kvs(
-        &self,
-        instance_id: &InstanceId,
-        snapshot_id: &SnapshotId,
-    ) -> Result<KvsMap, ErrorCode> {
-        let kvs_path = self.kvs_file_path(instance_id, snapshot_id);
-        let hash_path = self.hash_file_path(instance_id, snapshot_id);
+    fn load_kvs(&self, snapshot_id: &SnapshotId) -> Result<KvsMap, ErrorCode> {
+        let kvs_path = self.kvs_file_path(snapshot_id);
+        let hash_path = self.hash_file_path(snapshot_id);
         Self::load(&kvs_path, Some(&hash_path))
     }
 
-    fn load_defaults(&self, instance_id: &InstanceId) -> Result<KvsMap, ErrorCode> {
-        let defaults_path = self.defaults_file_path(instance_id);
+    fn load_defaults(&self) -> Result<KvsMap, ErrorCode> {
+        let defaults_path = self.defaults_file_path();
         Self::load(&defaults_path, None)
     }
 
-    fn flush(&self, kvs_map: &KvsMap, instance_id: &InstanceId) -> Result<(), ErrorCode> {
+    fn flush(&self, kvs_map: &KvsMap) -> Result<(), ErrorCode> {
         // Rotate previous snapshots.
-        self.snapshot_rotate(instance_id)?;
+        self.snapshot_rotate()?;
 
         // Save new snapshot with snapshot ID = 0.
         let snapshot_id = SnapshotId(0);
-        let kvs_path = self.kvs_file_path(instance_id, &snapshot_id);
-        let hash_path = self.hash_file_path(instance_id, &snapshot_id);
+        let kvs_path = self.kvs_file_path(&snapshot_id);
+        let hash_path = self.hash_file_path(&snapshot_id);
         Self::save(kvs_map, &kvs_path, Some(&hash_path))?;
 
         Ok(())
     }
 
-    fn snapshot_count(&self, instance_id: &InstanceId) -> usize {
+    fn snapshot_count(&self) -> usize {
         let mut count = 0;
 
         for idx in 0..Self::snapshot_max_count() {
             let snapshot_id = SnapshotId(idx);
-            let snapshot_path = self.kvs_file_path(instance_id, &snapshot_id);
+            let snapshot_path = self.kvs_file_path(&snapshot_id);
             if !snapshot_path.exists() {
                 break;
             }
@@ -333,11 +330,7 @@ impl KvsBackend for JsonBackend {
         KVS_MAX_SNAPSHOTS
     }
 
-    fn snapshot_restore(
-        &self,
-        instance_id: &InstanceId,
-        snapshot_id: &SnapshotId,
-    ) -> Result<KvsMap, ErrorCode> {
+    fn snapshot_restore(&self, snapshot_id: &SnapshotId) -> Result<KvsMap, ErrorCode> {
         // Fail if given snapshot ID is for current KVS.
         if *snapshot_id == SnapshotId(0) {
             eprintln!("error: tried to restore current KVS as snapshot");
@@ -345,47 +338,46 @@ impl KvsBackend for JsonBackend {
         }
 
         // Fail if snapshot doesn't exist.
-        if self.snapshot_count(instance_id) < snapshot_id.0 {
+        if self.snapshot_count() < snapshot_id.0 {
             eprintln!("error: tried to restore a non-existing snapshot");
             return Err(ErrorCode::InvalidSnapshotId);
         }
 
-        self.load_kvs(instance_id, snapshot_id)
+        self.load_kvs(snapshot_id)
     }
 }
 
 /// KVS backend path resolver for `JsonBackend`.
 impl KvsPathResolver for JsonBackend {
-    fn new(working_dir: &Path) -> Self {
+    fn new(instance_id: InstanceId, working_dir: &Path) -> Self {
         Self {
+            instance_id,
             working_dir: working_dir.to_path_buf(),
         }
     }
 
-    fn kvs_file_name(&self, instance_id: &InstanceId, snapshot_id: &SnapshotId) -> String {
-        format!("kvs_{instance_id}_{snapshot_id}.json")
+    fn kvs_file_name(&self, snapshot_id: &SnapshotId) -> String {
+        format!("kvs_{}_{snapshot_id}.json", self.instance_id)
     }
 
-    fn kvs_file_path(&self, instance_id: &InstanceId, snapshot_id: &SnapshotId) -> PathBuf {
-        self.working_dir
-            .join(self.kvs_file_name(instance_id, snapshot_id))
+    fn kvs_file_path(&self, snapshot_id: &SnapshotId) -> PathBuf {
+        self.working_dir.join(self.kvs_file_name(snapshot_id))
     }
 
-    fn hash_file_name(&self, instance_id: &InstanceId, snapshot_id: &SnapshotId) -> String {
-        format!("kvs_{instance_id}_{snapshot_id}.hash")
+    fn hash_file_name(&self, snapshot_id: &SnapshotId) -> String {
+        format!("kvs_{}_{snapshot_id}.hash", self.instance_id)
     }
 
-    fn hash_file_path(&self, instance_id: &InstanceId, snapshot_id: &SnapshotId) -> PathBuf {
-        self.working_dir
-            .join(self.hash_file_name(instance_id, snapshot_id))
+    fn hash_file_path(&self, snapshot_id: &SnapshotId) -> PathBuf {
+        self.working_dir.join(self.hash_file_name(snapshot_id))
     }
 
-    fn defaults_file_name(&self, instance_id: &InstanceId) -> String {
-        format!("kvs_{instance_id}_default.json")
+    fn defaults_file_name(&self) -> String {
+        format!("kvs_{}_default.json", self.instance_id)
     }
 
-    fn defaults_file_path(&self, instance_id: &InstanceId) -> PathBuf {
-        self.working_dir.join(self.defaults_file_name(instance_id))
+    fn defaults_file_path(&self) -> PathBuf {
+        self.working_dir.join(self.defaults_file_name())
     }
 }
 
@@ -1032,9 +1024,9 @@ mod path_resolver_tests {
     fn test_kvs_file_name() {
         let instance_id = InstanceId(123);
         let snapshot_id = SnapshotId(2);
-        let backend = JsonBackend::new(&PathBuf::new());
+        let backend = JsonBackend::new(instance_id.clone(), &PathBuf::new());
         let exp_name = format!("kvs_{instance_id}_{snapshot_id}.json");
-        let act_name = backend.kvs_file_name(&instance_id, &snapshot_id);
+        let act_name = backend.kvs_file_name(&snapshot_id);
         assert_eq!(exp_name, act_name);
     }
 
@@ -1045,18 +1037,18 @@ mod path_resolver_tests {
 
         let instance_id = InstanceId(123);
         let snapshot_id = SnapshotId(2);
-        let backend = JsonBackend::new(dir_path);
+        let backend = JsonBackend::new(instance_id.clone(), dir_path);
         let exp_name = dir_path.join(format!("kvs_{instance_id}_{snapshot_id}.json"));
-        let act_name = backend.kvs_file_path(&instance_id, &snapshot_id);
+        let act_name = backend.kvs_file_path(&snapshot_id);
         assert_eq!(exp_name, act_name);
     }
     #[test]
     fn test_hash_file_name() {
         let instance_id = InstanceId(123);
         let snapshot_id = SnapshotId(2);
-        let backend = JsonBackend::new(&PathBuf::new());
+        let backend = JsonBackend::new(instance_id.clone(), &PathBuf::new());
         let exp_name = format!("kvs_{instance_id}_{snapshot_id}.hash");
-        let act_name = backend.hash_file_name(&instance_id, &snapshot_id);
+        let act_name = backend.hash_file_name(&snapshot_id);
         assert_eq!(exp_name, act_name);
     }
 
@@ -1067,18 +1059,18 @@ mod path_resolver_tests {
 
         let instance_id = InstanceId(123);
         let snapshot_id = SnapshotId(2);
-        let backend = JsonBackend::new(dir_path);
+        let backend = JsonBackend::new(instance_id.clone(), dir_path);
         let exp_name = dir_path.join(format!("kvs_{instance_id}_{snapshot_id}.hash"));
-        let act_name = backend.hash_file_path(&instance_id, &snapshot_id);
+        let act_name = backend.hash_file_path(&snapshot_id);
         assert_eq!(exp_name, act_name);
     }
 
     #[test]
     fn test_defaults_file_name() {
         let instance_id = InstanceId(123);
-        let backend = JsonBackend::new(&PathBuf::new());
+        let backend = JsonBackend::new(instance_id.clone(), &PathBuf::new());
         let exp_name = format!("kvs_{instance_id}_default.json");
-        let act_name = backend.defaults_file_name(&instance_id);
+        let act_name = backend.defaults_file_name();
         assert_eq!(exp_name, act_name);
     }
 
@@ -1088,9 +1080,9 @@ mod path_resolver_tests {
         let dir_path = dir.path();
 
         let instance_id = InstanceId(123);
-        let backend = JsonBackend::new(dir_path);
+        let backend = JsonBackend::new(instance_id.clone(), dir_path);
         let exp_name = dir_path.join(format!("kvs_{instance_id}_default.json"));
-        let act_name = backend.defaults_file_path(&instance_id);
+        let act_name = backend.defaults_file_path();
         assert_eq!(exp_name, act_name);
     }
 }

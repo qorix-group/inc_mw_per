@@ -80,6 +80,7 @@
 //!
 
 use pico_args::Arguments;
+use rust_kvs::kvs_backend::KvsPathResolver;
 use rust_kvs::prelude::*;
 use std::collections::HashMap;
 use tinyjson::JsonValue;
@@ -436,7 +437,7 @@ fn _getkvsfilename(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
         },
     };
     let snapshot_id = SnapshotId(snapshot_id as usize);
-    let filename = kvs.get_kvs_file_path(&snapshot_id)?;
+    let filename = kvs.backend().kvs_file_path(&snapshot_id);
     println!("KVS Filename: {}", filename.display());
     println!("----------------------");
     Ok(())
@@ -458,8 +459,8 @@ fn _gethashfilename(kvs: Kvs, mut args: Arguments) -> Result<(), ErrorCode> {
         },
     };
     let snapshot_id = SnapshotId(snapshot_id as usize);
-    let filename = kvs.get_hash_file_path(&snapshot_id);
-    println!("Hash Filename: {}", filename?.display());
+    let filename = kvs.backend().hash_file_path(&snapshot_id);
+    println!("Hash Filename: {}", filename.display());
     println!("----------------------");
     Ok(())
 }

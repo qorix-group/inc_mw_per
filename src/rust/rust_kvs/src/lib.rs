@@ -140,7 +140,7 @@ pub mod error_code;
 mod json_backend;
 pub mod kvs;
 pub mod kvs_api;
-mod kvs_backend;
+pub mod kvs_backend;
 pub mod kvs_provider;
 pub mod kvs_value;
 
