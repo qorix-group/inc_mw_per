@@ -139,9 +139,9 @@ pub mod kvs;
 pub mod kvs_api;
 mod kvs_backend;
 pub mod kvs_builder;
-pub mod kvs_value;
-
 pub mod kvs_mock;
+pub mod kvs_value;
+mod log;
 
 pub type Kvs = kvs::GenericKvs<json_backend::JsonBackend>;
 

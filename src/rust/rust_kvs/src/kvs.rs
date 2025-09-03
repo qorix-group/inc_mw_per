@@ -15,6 +15,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use crate::log::warn;
+
+use crate::log::debug;
+
 use crate::error_code::ErrorCode;
 use crate::kvs_api::{FlushOnExit, InstanceId, KvsApi, SnapshotId};
 use crate::kvs_api::{OpenNeedDefaults, OpenNeedKvs};
@@ -129,7 +133,7 @@ impl<J: KvsBackend> GenericKvs<J> {
                     eprintln!("error: file {filename:?} could not be read: {e:?}");
                     Err(e)
                 } else {
-                    println!("file {filename:?} not found, using empty data");
+                    warn!("file {filename:?} not found, using empty data");
                     Ok(KvsMap::new())
                 }
             }
@@ -151,7 +155,7 @@ impl<J: KvsBackend> GenericKvs<J> {
             let snap_old = format!("{}_{}.json", self.filename_prefix.display(), idx - 1);
             let snap_new = format!("{}_{}.json", self.filename_prefix.display(), idx);
 
-            println!("rotating: {snap_old} -> {snap_new}");
+            debug!("rotating: {snap_old} -> {snap_new}");
 
             let res = fs::rename(hash_old, hash_new);
             if let Err(err) = res {
