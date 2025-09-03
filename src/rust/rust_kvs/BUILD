@@ -17,7 +17,10 @@ rust_library(
     name = "rust_kvs",
     srcs = glob(["src/**/*.rs"]),
     visibility = ["//visibility:public"],
-    deps = all_crate_deps(
+    crate_features = ["score-log"],
+    deps = [
+        "@score-mw-log//src/mw_log",
+    ] + all_crate_deps(
         normal = True,
     ),
 )
@@ -25,6 +28,7 @@ rust_library(
 rust_test(
     name = "tests",
     crate = "rust_kvs",
+    crate_features = ["score-log"],
     tags = [
         "unit_tests",
         "ut",
@@ -32,7 +36,7 @@ rust_test(
     deps = all_crate_deps(
         normal = True,
         normal_dev = True,
-    ),
+    )
 )
 
 __cit_deps = [

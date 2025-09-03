@@ -19,10 +19,12 @@ rust_binary(
         "src/kvs_tool.rs",
     ],
     crate_name = "rust_kvs_tool",
+    crate_features = ["score-log"],
     visibility = ["//visibility:public"],
     deps = all_crate_deps(
         normal = True,
     ) + [
         "//src/rust/rust_kvs",
+        "@score-mw-log//src/mw_log_subscriber",
     ],
 )
