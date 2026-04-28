@@ -56,13 +56,26 @@ bazel_dep(name = "google_benchmark", version = "1.9.4", dev_dependency = True)
 bazel_dep(name = "platforms", version = "1.0.0")
 
 ## S-CORE bazel registry
+# score_baselibs@0.2.6 requires boost.container/boost.interprocess@1.83.0.bcr.4 (compat level 0),
+# but score_communication@0.1.2 (via score_logging) requires boost.program_options@1.87.0 (compat level 108700).
+# Override both to 1.87.0 so all boost modules share the same compat level.
+single_version_override(
+    module_name = "boost.container",
+    version = "1.87.0",
+)
+
+single_version_override(
+    module_name = "boost.interprocess",
+    version = "1.87.0",
+)
+
 bazel_dep(name = "score_baselibs", version = "0.2.6")
 bazel_dep(name = "score_baselibs_rust", version = "0.1.2")
 bazel_dep(name = "score_bazel_platforms", version = "0.1.2")
 bazel_dep(name = "score_docs_as_code", version = "4.0.3")
 single_version_override(
-    module_name="score_docs_as_code",
-    version="4.0.3" 
+    module_name = "score_docs_as_code",
+    version = "4.0.3",
 )
 
 bazel_dep(name = "score_platform", version = "0.5.5", dev_dependency = True)
@@ -152,22 +165,3 @@ use_repo(
 
 # S-CORE crates
 bazel_dep(name = "score_crates", version = "0.0.9")
-
-# Overrides to avoid errors with `bazel mod deps --lockfile_mode=update`
-# abseil-cpp 20240722.0 uses cc_configure_extension removed in Bazel 8
-single_version_override(
-    module_name = "abseil-cpp",
-    version = "20240722.1",
-)
-
-# grpc-java 1.66.0 imports com_envoyproxy_protoc_gen_validate which grpc no longer generates
-single_version_override(
-    module_name = "grpc-java",
-    version = "1.69.1",
-)
-
-# re2 2024-07-02 uses cc_configure_extension from bazel_tools removed in Bazel 8
-single_version_override(
-    module_name = "re2",
-    version = "2025-08-12",
-)
