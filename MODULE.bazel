@@ -12,8 +12,6 @@
 # *******************************************************************************
 module(
     name = "score_persistency",
-    version = "0.0.0",
-    compatibility_level = 0,
 )
 
 ## Toolchains (dependencies and config)
@@ -40,13 +38,13 @@ use_repo(pip, "pip_score_venv_test")
 bazel_dep(name = "rules_rust", version = "0.68.2-score")
 
 # Shared Rust policies (Clippy config, etc.), overridden locally during development.
-bazel_dep(name = "score_rust_policies", version = "0.0.4", dev_dependency = True)
+bazel_dep(name = "score_rust_policies", version = "0.0.5", dev_dependency = True)
 
 # bazel cc rules
 bazel_dep(name = "rules_cc", version = "0.1.2")
 
 # Toolchains and extensions
-bazel_dep(name = "score_bazel_cpp_toolchains", version = "0.2.2", dev_dependency = True)
+bazel_dep(name = "score_bazel_cpp_toolchains", version = "0.5.1", dev_dependency = True)
 bazel_dep(name = "score_toolchains_rust", version = "0.9.1", dev_dependency = True)
 
 ## Bazel registry
@@ -58,16 +56,20 @@ bazel_dep(name = "google_benchmark", version = "1.9.4", dev_dependency = True)
 bazel_dep(name = "platforms", version = "1.0.0")
 
 ## S-CORE bazel registry
-bazel_dep(name = "score_baselibs", version = "0.2.4")
-bazel_dep(name = "score_baselibs_rust", version = "0.1.0")
-bazel_dep(name = "score_bazel_platforms", version = "0.0.4")
-bazel_dep(name = "score_docs_as_code", version = "3.0.0")
+bazel_dep(name = "score_baselibs", version = "0.2.6")
+bazel_dep(name = "score_baselibs_rust", version = "0.1.2")
+bazel_dep(name = "score_bazel_platforms", version = "0.1.2")
+bazel_dep(name = "score_docs_as_code", version = "4.0.3")
+single_version_override(
+    module_name="score_docs_as_code",
+    version="4.0.3" 
+)
 
-bazel_dep(name = "score_platform", version = "0.5.3", dev_dependency = True)
-bazel_dep(name = "score_process", version = "1.4.3", dev_dependency = True)
+bazel_dep(name = "score_platform", version = "0.5.5", dev_dependency = True)
+bazel_dep(name = "score_process", version = "1.5.4", dev_dependency = True)
 
 bazel_dep(name = "score_python_basics", version = "0.3.4")
-bazel_dep(name = "score_tooling", version = "1.1.0")
+bazel_dep(name = "score_tooling", version = "1.1.2")
 bazel_dep(name = "score_logging", version = "0.1.0")
 
 # TODO: remove once inherited properly from `score_logging`.
@@ -85,12 +87,7 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2")
 ## temporary overrides / tools
 # Testing utils dependency.
 # Direct usage of tag in git_override reports false problem in editor, using hash of a tag
-bazel_dep(name = "score_test_scenarios", version = "0.3.0")
-git_override(
-    module_name = "score_test_scenarios",
-    commit = "a2f9cded3deb636f5dc800bf7a47131487119721",  # tag v0.3.0
-    remote = "https://github.com/eclipse-score/testing_tools.git",
-)
+bazel_dep(name = "score_test_scenarios", version = "0.4.0")
 
 bazel_dep(name = "custom_qemu", version = "1.0.0", dev_dependency = True)
 archive_override(
@@ -103,7 +100,7 @@ archive_override(
 )
 
 # needed for ITF
-bazel_dep(name = "score_toolchains_qnx", version = "0.0.5", dev_dependency = True)
+bazel_dep(name = "score_toolchains_qnx", version = "0.0.7", dev_dependency = True)
 
 toolchains_qnx = use_extension("@score_toolchains_qnx//:extensions.bzl", "toolchains_qnx", dev_dependency = True)
 toolchains_qnx.sdp(
@@ -154,4 +151,23 @@ use_repo(
 )
 
 # S-CORE crates
-bazel_dep(name = "score_crates", version = "0.0.7")
+bazel_dep(name = "score_crates", version = "0.0.9")
+
+# Overrides to avoid errors with `bazel mod deps --lockfile_mode=update`
+# abseil-cpp 20240722.0 uses cc_configure_extension removed in Bazel 8
+single_version_override(
+    module_name = "abseil-cpp",
+    version = "20240722.1",
+)
+
+# grpc-java 1.66.0 imports com_envoyproxy_protoc_gen_validate which grpc no longer generates
+single_version_override(
+    module_name = "grpc-java",
+    version = "1.69.1",
+)
+
+# re2 2024-07-02 uses cc_configure_extension from bazel_tools removed in Bazel 8
+single_version_override(
+    module_name = "re2",
+    version = "2025-08-12",
+)
