@@ -59,17 +59,23 @@ bazel_dep(name = "platforms", version = "1.0.0")
 # score_baselibs@0.2.6 requires boost.container/boost.interprocess@1.83.0.bcr.4 (compat level 0),
 # but score_communication@0.1.2 (via score_logging) requires boost.program_options@1.87.0 (compat level 108700).
 # Override both to 1.87.0 so all boost modules share the same compat level.
-single_version_override(
-    module_name = "boost.container",
-    version = "1.87.0",
-)
+# single_version_override(
+#     module_name = "boost.container",
+#     version = "1.87.0",
+# )
 
-single_version_override(
-    module_name = "boost.interprocess",
-    version = "1.87.0",
-)
+# single_version_override(
+#     module_name = "boost.interprocess",
+#     version = "1.87.0",
+# )
 
 bazel_dep(name = "score_baselibs", version = "0.2.6")
+git_override(
+    module_name = "score_baselibs",
+    commit = "e87426c8d85d9c49fd68088f8c0134037d3a2748",
+    remote = "https://github.com/eclipse-score/baselibs.git",
+)
+
 bazel_dep(name = "score_baselibs_rust", version = "0.1.2")
 bazel_dep(name = "score_bazel_platforms", version = "0.1.2")
 bazel_dep(name = "score_docs_as_code", version = "4.0.3")
@@ -84,6 +90,11 @@ bazel_dep(name = "score_process", version = "1.5.4", dev_dependency = True)
 bazel_dep(name = "score_python_basics", version = "0.3.4")
 bazel_dep(name = "score_tooling", version = "1.1.2")
 bazel_dep(name = "score_logging", version = "0.1.0")
+git_override(
+    module_name = "score_logging",
+    commit = "1684d41b54a3978a4a88e2fd5136305335486861",
+    remote = "https://github.com/eclipse-score/logging.git",
+)
 
 # TODO: remove once inherited properly from `score_logging`.
 bazel_dep(name = "trlc", version = "0.0.0", dev_dependency = True)
